@@ -1,0 +1,18 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: 'Which distros to build'
+        default: 'ubuntu2604'
+        type: choice
+        options: [all, ubuntu2604, debian13, arch, cachyos, alpine]
+
+jobs:
+  image:
+    permissions:
+      contents: write
+    uses: ./.forgejo/workflows/build-image.yml
+    with:
+      distro: ${{ inputs.distro }}

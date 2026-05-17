@@ -1,0 +1,182 @@
+name: Build Image
+run-name: Build Image (${{ inputs.distro || 'all' }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: 'Distribution'
+        default: 'ubuntu2604'
+        type: choice
+        options: [all, ubuntu2604, debian13, arch, cachyos, alpine]
+  workflow_call:
+    inputs:
+      distro:
+        type: string
+        default: 'ubuntu2604'
+
+jobs:
+  matrix:
+    runs-on: self-hosted
+    outputs:
+      distros: ${{ steps.set.outputs.distros }}
+    steps:
+      - id: set
+        run: |
+          INPUT="${{ inputs.distro || 'ubuntu2604' }}"
+          if [ "$INPUT" = "all" ]; then
+            echo 'distros=["ubuntu2604","debian13","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: matrix
+    runs-on: self-hosted
+    timeout-minutes: 240
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        distro: ${{ fromJson(needs.matrix.outputs.distros) }}
+
+    env:
+      CCACHE_DIR: /home/opc/ccache
+
+    steps:
+      - name: Checkout image builder
+        uses: actions/checkout@v6
+        with:
+          path: image
+
+      - name: Build ${{ matrix.distro }} image
+        run: |
+          bash image/build_image.sh --distro "${{ matrix.distro }}"
+
+      - name: Set version info
+        id: version
+        run: |
+          psha=$(git -C image/work/ps5-linux-patches rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          kver=$(cat image/linux-bin/VERSION 2>/dev/null || echo "unknown")
+          ts=$(date -u +%Y%m%d-%H%M%S)
+          echo "psha=$psha" >> "$GITHUB_OUTPUT"
+          echo "kver=$kver" >> "$GITHUB_OUTPUT"
+          echo "ts=$ts" >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        run: |
+          ls -lh image/output/*.img
+          sha256sum image/output/*.img
+
+      - name: Compress image
+        run: |
+          xz -T0 -9 -c image/output/ps5-${{ matrix.distro }}.img \
+            > image/output/ps5-${{ matrix.distro }}.img.xz
+
+      - name: Save build metadata
+        run: |
+          mkdir -p meta
+          sha256sum image/output/ps5-${{ matrix.distro }}.img.xz \
+            | sed 's|image/output/||' > meta/${{ matrix.distro }}.sha256
+          echo "${{ steps.version.outputs.kver }}" > meta/kver
+          echo "${{ steps.version.outputs.psha }}" > meta/psha
+          echo "${{ steps.version.outputs.ts }}" > meta/ts
+
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v6
+        with:
+          name: meta-${{ matrix.distro }}
+          path: meta/
+          retention-days: 1
+
+      - name: Attach image to Forgejo release (tag=latest)
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          DISTRO: ${{ matrix.distro }}
+        run: |
+          set -euo pipefail
+          API="$SERVER/api/v1/repos/$REPO"
+          UA="ci-image-uploader/1.0"
+          AUTH="Authorization: token $FORGEJO_TOKEN"
+          # Get-or-create the 'latest' release.
+          REL_ID=$(curl -sS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/tags/latest" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id","") if isinstance(d,dict) else "")' \
+            || true)
+          if [ -z "$REL_ID" ]; then
+            REL_ID=$(curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" -H "Content-Type: application/json" \
+              "$API/releases" \
+              -d '{"tag_name":"latest","name":"PS5 Linux Image (latest)","body":"build in progress","draft":false,"prerelease":false}' \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          fi
+          # Delete any prior asset with the same filename so the upload doesn't 409.
+          export FILE="ps5-${DISTRO}.img.xz"
+          curl -fsS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets" > /tmp/assets.json
+          for AID in $(python3 -c 'import json,os; print(" ".join(str(a["id"]) for a in json.load(open("/tmp/assets.json")) if a.get("name")==os.environ["FILE"]))'); do
+            curl -fsS -X DELETE -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets/$AID" || true
+          done
+          # Upload the new asset.
+          curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" \
+            -F "attachment=@image/output/$FILE" \
+            "$API/releases/$REL_ID/assets?name=$FILE"
+
+  release:
+    needs: build
+    runs-on: self-hosted
+    if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+    permissions:
+      contents: write
+    steps:
+      - name: Download build metadata
+        uses: actions/download-artifact@v6
+        with:
+          pattern: meta-*
+          path: meta
+          merge-multiple: true
+
+      - name: Update release body with build metadata
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          export KVER=$(cat meta/kver)
+          export PSHA=$(cat meta/psha)
+          export TS=$(cat meta/ts)
+          export SUMS=$(cat meta/*.sha256)
+          cat > /tmp/render_release_body.py <<'PY'
+          import json,os
+          sums=os.environ['SUMS']
+          kver=os.environ['KVER']
+          psha=os.environ['PSHA']
+          ts=os.environ['TS']
+          server=os.environ['SERVER']
+          repo=os.environ['REPO']
+          rel='/'.join([server,repo,'releases/download/latest'])
+          lines=['PS5 Linux images built from latest main.','',
+                 f'Kernel: `{kver}`',
+                 f'Patches: `{psha}`',
+                 f'Built: `{ts}`','',
+                 '| Image | Download |','|-------|----------|']
+          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13','Debian 13'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine')]:
+              f=f'ps5-{distro}.img.xz'
+              lines.append(f'| {label} | [{f}]({rel}/{f}) |')
+          lines += ['','**SHA256 checksums:**','```',sums.strip(),'```']
+          print(json.dumps('\n'.join(lines)))
+          PY
+          # Strip the 10-space indent the heredoc inherited from YAML
+          sed -i 's/^          //' /tmp/render_release_body.py
+          BODY=$(python3 /tmp/render_release_body.py)
+          API="$SERVER/api/v1/repos/$REPO"
+          REL_ID=$(curl -fsS -H "Authorization: token $FORGEJO_TOKEN" -H "User-Agent: ci/1.0" \
+            "$API/releases/tags/latest" | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")
+          curl -fsS -X PATCH -H "Authorization: token $FORGEJO_TOKEN" -H "User-Agent: ci/1.0" \
+            -H "Content-Type: application/json" \
+            "$API/releases/$REL_ID" \
+            -d "{\"body\":$BODY,\"name\":\"PS5 Linux Image (latest)\"}" > /dev/null
