@@ -29,7 +29,7 @@ EOF
     cp /repo/distros/${DISTRO}/nm-dns.conf       "$STAGING/" 2>/dev/null || true
 
     case "$DISTRO" in
-        ubuntu*)
+        ubuntu*|debian*)
             cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
@@ -71,7 +71,7 @@ fi
 
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
-    ubuntu*)
+    ubuntu*|debian*)
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;

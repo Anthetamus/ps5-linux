@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, arch, cachyos, alpine]
+        options: [all, ubuntu2604, debian13, arch, cachyos, alpine]
   workflow_call:
     inputs:
       distro:
@@ -40,7 +40,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","debian13","arch","cachyos","alpine"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
