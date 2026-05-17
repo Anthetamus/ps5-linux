@@ -44,7 +44,7 @@ jobs:
         distro: ${{ fromJson(needs.matrix.outputs.distros) }}
 
     env:
-      CCACHE_DIR: /home/opc/ccache
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     steps:
       - name: Checkout image builder
