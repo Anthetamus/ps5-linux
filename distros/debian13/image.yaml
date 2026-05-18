@@ -205,8 +205,11 @@ actions:
     set -eux
     systemctl enable grow-rootfs.service
     systemctl enable systemd-resolved
-    rm -f /etc/resolv.conf
-    ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+    # /etc/resolv.conf is bind-mounted by distrobuilder during build so we
+    # can't replace it here. Defer to systemd-tmpfiles at first boot.
+    mkdir -p /etc/tmpfiles.d
+    printf 'L+ /etc/resolv.conf - - - - /run/systemd/resolve/stub-resolv.conf\n' \
+        > /etc/tmpfiles.d/resolv-conf.conf
 
     # Create user
     useradd -m -s /bin/bash -G sudo,video,audio,input,render ps5
