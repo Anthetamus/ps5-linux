@@ -11,9 +11,12 @@ source:
   variant: minbase
   keyserver: keyserver.ubuntu.com
   keys:
-  - 0x1F89983E0081FDE018F3CC9673A4F27B8DD47936
-  - 0x6D33866EDD8FFA41C0143AEDDCC9EFBF77E11517
-  - 0xAC530D520F2F3269F5E98313A48449044AAD5C5D
+  # Trixie (Debian 13) signing keys — pulled from ftp-master.debian.org/keys.
+  - 0x41587F7DB8C774BCCF131416762F67A0B2C39DE4  # release-13 (Stable Release Key 13/trixie)
+  - 0x04B54C3CDCA79751B16BC6B5225629DF75B188BD  # archive-key-13
+  - 0xB8E5F13176D2A7A75220028078DBA3BC47EF2265  # archive-key-13 (auto)
+  - 0x5E04A1E3223A19A20706E20F9904613D4CCE68C6  # archive-key-13-security
+  - 0x89C87ACEA5DD6B8E6A7068808E9F831205B4BA95  # archive-key-13-security (auto)
 
 packages:
   manager: apt
