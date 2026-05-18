@@ -70,6 +70,9 @@ packages:
     - network-manager-gnome
     - wpasupplicant
     - wireless-tools
+    # Trixie ships systemd-resolved as a separate package (not bundled in
+    # systemd as Ubuntu does). post-files hook below `systemctl enable`s it.
+    - systemd-resolved
     - iw
 
     # System
