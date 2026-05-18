@@ -48,7 +48,15 @@ packages:
     - libdrm-amdgpu1
     - xserver-xorg-video-amdgpu
     - firmware-amd-graphics
-    - linux-firmware
+    # Debian doesn't ship a single 'linux-firmware' meta — pick the bits the PS5
+    # actually needs (AMD GPU/iGPU + audio + USB wifi/BT firmware blobs).
+    - firmware-linux
+    - firmware-linux-free
+    - firmware-linux-nonfree
+    - firmware-misc-nonfree
+    - firmware-realtek
+    - firmware-iwlwifi
+    - firmware-atheros
 
     # Audio
     - pipewire
