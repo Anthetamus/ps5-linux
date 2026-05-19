@@ -109,7 +109,11 @@ actions:
     set -eux
     # /opt/rpms/ was just copied in by the files: stage — now we can install.
     mkdir -p /boot/efi
-    dnf install -y /opt/rpms/*.rpm
+    # Our alien-converted kernel RPM ships /usr/include/asm-generic/* which
+    # collides with Fedora's kernel-headers. --allowerasing removes the
+    # conflicting Fedora packages. Dedupe to avoid the same .rpm listed twice.
+    RPMS=$(ls -1 /opt/rpms/*.rpm | sort -u)
+    dnf install -y --allowerasing $RPMS
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
     dracut -f --kver "$KVER" || true
