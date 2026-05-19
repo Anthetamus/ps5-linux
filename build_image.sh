@@ -334,12 +334,19 @@ fi
 # build was for a deb-based distro), and the next distro needs the .rpm.
 case "$FORMAT" in
     rpm|all)
+        # Two parallel builds (capacity > 1 on the runner) might both find the
+        # .rpm missing and race the alien conversion. Serialize via flock and
+        # re-check inside the lock so the loser just no-ops.
         if ! ls "$KERNEL_OUT"/*.rpm 1>/dev/null 2>&1; then
             run_stage "Convert kernel .deb -> .rpm (alien)" \
-                docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
-                    -v "$KERNEL_OUT":/out \
-                    ps5-kernel-builder \
-                    /package-rpm.sh
+                flock "$KERNEL_OUT/.alien.lock" sh -c "
+                    if ! ls \"$KERNEL_OUT\"/*.rpm 1>/dev/null 2>&1; then
+                        docker run --rm --platform \"$KERNEL_BUILDER_PLATFORM\" --name \"$DOCKER_NAME\" \
+                            -v \"$KERNEL_OUT\":/out \
+                            ps5-kernel-builder \
+                            /package-rpm.sh
+                    fi
+                "
         fi
         ;;
 esac
