@@ -111,6 +111,9 @@ SKIP_CHROOT=false
 
 case "$FORMAT" in
     arch) ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
+    # rpm uses alien to convert from .deb — only the .deb needs to exist
+    # to skip the kernel build; the alien step runs separately below.
+    rpm)  ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
     all)  ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && \
           ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
     *)    ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
@@ -325,6 +328,21 @@ else
                 ps5-kernel-packager-arch
     esac
 fi
+
+# Alien .deb -> .rpm runs OUTSIDE the SKIP_KERNEL block: even when the kernel
+# build was skipped, the persistent cache may only have the .deb (e.g. last
+# build was for a deb-based distro), and the next distro needs the .rpm.
+case "$FORMAT" in
+    rpm|all)
+        if ! ls "$KERNEL_OUT"/*.rpm 1>/dev/null 2>&1; then
+            run_stage "Convert kernel .deb -> .rpm (alien)" \
+                docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
+                    -v "$KERNEL_OUT":/out \
+                    ps5-kernel-builder \
+                    /package-rpm.sh
+        fi
+        ;;
+esac
 
 if [ "$KERNEL_ONLY" = true ]; then
     KVER=$(cat "$KERNEL_OUT/VERSION" 2>/dev/null || echo "unknown")
