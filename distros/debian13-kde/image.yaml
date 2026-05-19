@@ -34,9 +34,9 @@ packages:
 
   sets:
   - packages:
-    # Desktop (KDE Plasma)
+    # Desktop (KDE Plasma) — plasma-workspace-wayland isn't a Trixie package;
+    # kde-plasma-desktop already pulls plasma-workspace + kwin-wayland.
     - kde-plasma-desktop
-    - plasma-workspace-wayland
     - plasma-nm
     - plasma-pa
     - konsole
