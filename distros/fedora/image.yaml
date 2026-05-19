@@ -1,0 +1,181 @@
+image:
+  name: ps5-fedora
+  distribution: fedora
+  release: "42"
+  description: Fedora 42 Workstation (GNOME)
+  architecture: x86_64
+
+source:
+  downloader: fedora-http
+  url: https://kojipkgs.fedoraproject.org
+  variant: Container
+
+targets:
+  lxc:
+    create_message: |
+      Welcome to {{ image.description }}
+    config:
+      - type: all
+        before: 5
+        content: |-
+          lxc.include = LXC_TEMPLATE_CONFIG/fedora.common.conf
+
+packages:
+  manager: dnf
+  update: true
+  cleanup: true
+
+  sets:
+    - packages:
+      # Desktop (GNOME — Fedora's default)
+      - gnome-shell
+      - gnome-session-xsession
+      - gnome-terminal
+      - nautilus
+      - gnome-control-center
+      - gdm
+
+      # Display / GPU
+      - mesa-vulkan-drivers
+      - mesa-dri-drivers
+      - xorg-x11-drv-amdgpu
+      - xorg-x11-server-Xorg
+
+      # Firmware (Fedora bundles AMD/Realtek/Atheros/Iwlwifi in linux-firmware)
+      - linux-firmware
+      - amd-gpu-firmware
+
+      # Audio
+      - pipewire
+      - pipewire-pulseaudio
+      - wireplumber
+      - alsa-utils
+
+      # Networking
+      - NetworkManager
+      - NetworkManager-wifi
+      - NetworkManager-tui
+      - wpa_supplicant
+
+      # System
+      - systemd
+      - systemd-resolved
+      - dbus
+      - openssh-server
+      - sudo
+      - dracut
+      - kmod
+      - kexec-tools
+      - kernel-modules
+      - kernel-modules-extra
+      - zram-generator
+
+      # Base tools
+      - bash
+      - coreutils
+      - util-linux
+      - grep
+      - sed
+      - gawk
+      - vim-minimal
+      - which
+
+      # Kernel build deps (for rebuilding if needed)
+      - make
+      - gcc
+      - kernel-headers
+      - kernel-devel
+
+      # Fonts
+      - liberation-fonts
+      - google-noto-sans-fonts
+
+      action: install
+
+actions:
+- trigger: post-update
+  action: |-
+    #!/bin/bash
+    set -eux
+    # Lock root; create ps5 user with sudo via wheel.
+    passwd -l root
+    useradd -m -s /bin/bash -G wheel,video,audio,input,render ps5
+    echo "ps5:ps5" | chpasswd
+    sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || true
+
+    # Install the PS5 kernel RPM (built upstream as .deb then alien-converted)
+    mkdir -p /boot/efi
+    dnf install -y /opt/rpms/*.rpm
+    rm -rf /opt/rpms
+    KVER=$(ls -1t /lib/modules | head -1)
+    dracut -f --kver "$KVER" || true
+    /etc/kernel/postinst.d/zz-update-boot "$KVER" || true
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    systemctl enable grow-rootfs.service || true
+    systemctl enable systemd-resolved
+    # Defer /etc/resolv.conf symlink to boot — bind-mounted during build.
+    mkdir -p /etc/tmpfiles.d
+    printf 'L+ /etc/resolv.conf - - - - /run/systemd/resolve/stub-resolv.conf\n' \
+        > /etc/tmpfiles.d/resolv-conf.conf
+
+    # GDM autologin
+    mkdir -p /etc/gdm
+    cat > /etc/gdm/custom.conf <<GDM
+    [daemon]
+    AutomaticLoginEnable=True
+    AutomaticLogin=ps5
+    WaylandEnable=false
+    GDM
+    systemctl enable gdm
+
+    # NetworkManager
+    systemctl enable NetworkManager
+
+    # SSH config
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    systemctl enable sshd
+
+    # zram swap
+    if command -v zram-generator >/dev/null 2>&1; then
+        printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
+    fi
+
+files:
+- name: hostname
+  path: /etc/hostname
+  generator: hostname
+
+- name: hosts
+  path: /etc/hosts
+  generator: hosts
+
+# kernel postinst that updates the EFI boot bits — shared across deb-based distros.
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+# NetworkManager DNS handover to systemd-resolved.
+- path: /etc/NetworkManager/conf.d/10-dns.conf
+  generator: copy
+  source: /tmp/build-staging/nm-dns.conf
+
+# Filesystem grow on first boot.
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+# Kernel RPMs staged into the chroot for the post-update dnf install.
+- path: /opt/rpms/
+  generator: copy
+  source: /tmp/build-staging/rpms

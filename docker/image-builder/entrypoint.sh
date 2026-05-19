@@ -34,6 +34,12 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
             ;;
+        fedora*)
+            cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
+            cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
+            mkdir -p "$STAGING/rpms"
+            cp /kernel-debs/*.rpm                          "$STAGING/rpms/"
+            ;;
         alpine)
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
@@ -71,7 +77,7 @@ fi
 
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
-    ubuntu*|debian*)
+    ubuntu*|debian*|fedora*)
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;

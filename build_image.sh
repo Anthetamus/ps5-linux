@@ -66,7 +66,12 @@ if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
 fi
 
 if [ -z "$FORMAT" ]; then
-    case "$DISTRO" in arch|cachyos) FORMAT="arch" ;; all) FORMAT="all" ;; *) FORMAT="deb" ;; esac
+    case "$DISTRO" in
+        arch|cachyos) FORMAT="arch" ;;
+        fedora*)      FORMAT="rpm" ;;
+        all)          FORMAT="all" ;;
+        *)            FORMAT="deb" ;;
+    esac
 fi
 
 KERNEL_BUILDER_PLATFORM="linux/amd64"
@@ -291,7 +296,8 @@ else
 
     ls "$KERNEL_OUT/staging/lib/modules/" | head -1 > "$KERNEL_OUT/VERSION"
 
-    case "$FORMAT" in deb|all)
+    case "$FORMAT" in deb|rpm|all)
+        # RPM is built from the .deb via alien — so deb is always built first.
         run_stage "Package kernel (.deb)" \
             docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
                 -v "$KERNEL_SRC":/src \
@@ -299,6 +305,14 @@ else
                 -v "$CCACHE_DIR":/ccache \
                 ps5-kernel-builder \
                 /package-deb.sh
+    esac
+
+    case "$FORMAT" in rpm|all)
+        run_stage "Package kernel (.rpm)" \
+            docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
+                -v "$KERNEL_OUT":/out \
+                ps5-kernel-builder \
+                /package-rpm.sh
     esac
 
     case "$FORMAT" in arch|all)
