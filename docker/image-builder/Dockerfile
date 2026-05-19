@@ -2,13 +2,15 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System dependencies for distrobuilder and image creation
+# System dependencies for distrobuilder and image creation.
+# umoci is required by distrobuilder when bootstrapping Fedora (OCI Container image).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget git make gcc libc6-dev build-essential \
     debootstrap rsync gpg dirmngr squashfs-tools \
     parted dosfstools e2fsprogs kmod \
     initramfs-tools fdisk gdisk udev kpartx \
     xz-utils bzip2 zstd \
+    umoci skopeo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go (Ubuntu 24.04 only has 1.22, distrobuilder needs newer)
