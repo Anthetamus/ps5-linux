@@ -10,6 +10,7 @@ CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
 PATCHES_REF="kernel-7.0.8-d44cfeb"
+MWIFIEX_REF="5cfd063449f27e2f8a7d17c814a3bb21c27aa903"
 
 MULTI_DISTROS="ubuntu2604 debian13 arch alpine cachyos"
 
@@ -292,6 +293,7 @@ else
 
     run_stage "Compile kernel" \
         docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
+            -e MWIFIEX_REF="$MWIFIEX_REF" \
             -v "$KERNEL_SRC":/src \
             -v "$KERNEL_OUT":/out \
             -v "$CCACHE_DIR":/ccache \

@@ -57,16 +57,18 @@ jobs:
         with:
           path: image
 
-      - name: Wire persistent kernel cache (bust on PATCHES_REF change)
+      - name: Wire persistent kernel cache (bust on PATCHES_REF or MWIFIEX_REF change)
         run: |
           set -eux
           mkdir -p /data/cache/ps5/{linux,kernel-out,ccache}
-          # Cache-bust: if the PATCHES_REF baked into the new checkout differs
-          # from the one the cache was built against, wipe linux/ + kernel-out/.
-          CUR=$(grep -E '^PATCHES_REF=' image/build_image.sh | head -1 | cut -d'"' -f2)
+          # Cache marker = PATCHES_REF + MWIFIEX_REF combined; bumping either
+          # invalidates the cached kernel + driver.
+          PCUR=$(grep -E '^PATCHES_REF=' image/build_image.sh | head -1 | cut -d'"' -f2)
+          MCUR=$(grep -E '^MWIFIEX_REF=' image/build_image.sh | head -1 | cut -d'"' -f2)
+          CUR="$PCUR|$MCUR"
           OLD=$(cat /data/cache/ps5/.patches-ref 2>/dev/null || echo "")
           if [ "$CUR" != "$OLD" ]; then
-            echo "PATCHES_REF changed: $OLD -> $CUR, wiping cached kernel"
+            echo "ref changed: $OLD -> $CUR, wiping cached kernel"
             rm -rf /data/cache/ps5/linux /data/cache/ps5/kernel-out
             mkdir -p /data/cache/ps5/linux /data/cache/ps5/kernel-out
             echo "$CUR" > /data/cache/ps5/.patches-ref

@@ -18,6 +18,12 @@ cp "$STAGING/System.map"    "$PKG/boot/System.map-$KVER"
 cp "$STAGING/.config"       "$PKG/boot/config-$KVER"
 cp -a "$STAGING/lib/modules/$KVER" "$PKG/lib/modules/"
 
+# PS5 mwifiex modprobe config (built alongside the kernel modules in build.sh).
+if [ -d "$STAGING/etc" ]; then
+    mkdir -p "$PKG/etc"
+    cp -a "$STAGING/etc/." "$PKG/etc/"
+fi
+
 # Kernel headers (for out-of-tree module builds)
 if [ -d "$STAGING/headers" ]; then
     cp -a "$STAGING/headers/usr" "$PKG/usr"

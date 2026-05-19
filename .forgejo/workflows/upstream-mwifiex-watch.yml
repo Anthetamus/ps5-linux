@@ -1,0 +1,58 @@
+name: Upstream mwifiex watch
+run-name: Watch ps5-linux-mwifiex main for new commits
+
+on:
+  schedule:
+    - cron: '15 4 * * *'   # 04:15 UTC daily (offset from kernel watcher at 04:00)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare upstream main vs current MWIFIEX_REF
+        id: cmp
+        run: |
+          set -euo pipefail
+          LATEST=$(git ls-remote https://github.com/ps5-linux/ps5-linux-mwifiex.git refs/heads/main \
+            | awk '{print $1}')
+          CUR=$(grep -E '^MWIFIEX_REF=' build_image.sh | head -1 | cut -d'"' -f2)
+          echo "upstream main: $LATEST"
+          echo "current ref:   $CUR"
+          echo "latest=$LATEST"  >> "$GITHUB_OUTPUT"
+          echo "current=$CUR"    >> "$GITHUB_OUTPUT"
+          if [ "$LATEST" = "$CUR" ]; then
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=true"  >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump + commit + push + dispatch
+        if: steps.cmp.outputs.stale == 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          LATEST: ${{ steps.cmp.outputs.latest }}
+          CUR: ${{ steps.cmp.outputs.current }}
+        run: |
+          set -euo pipefail
+          sed -i "s|^MWIFIEX_REF=\"${CUR}\"|MWIFIEX_REF=\"${LATEST}\"|" build_image.sh
+          git config user.name  "mia"
+          git config user.email "mia@noreply.git.etawen.dev"
+          git add build_image.sh
+          git commit -m "mwifiex: auto-bump ${CUR:0:10} -> ${LATEST:0:10} (upstream watch)"
+          git push "https://x-access-token:${TOKEN}@${SERVER#https://}/${REPO}.git" HEAD:main
+          curl -fsS -X POST \
+            -H "Authorization: token ${TOKEN}" \
+            -H "User-Agent: upstream-watch/1.0" \
+            -H "Content-Type: application/json" \
+            "${SERVER}/api/v1/repos/${REPO}/actions/workflows/trigger-builds.yml/dispatches" \
+            -d '{"ref":"main","inputs":{"distro":"all"}}'
+          echo "dispatched 'all' build for mwifiex ${LATEST}"
