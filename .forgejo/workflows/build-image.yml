@@ -39,7 +39,10 @@ jobs:
 
     strategy:
       fail-fast: false
-      max-parallel: 1
+      # Runner capacity is 2; the limiting factor is host CPU/RAM during the
+      # one-time kernel build. After the cache populates, the rest are I/O
+      # bound and run two-at-a-time comfortably.
+      max-parallel: 2
       matrix:
         distro: ${{ fromJson(needs.matrix.outputs.distros) }}
 
