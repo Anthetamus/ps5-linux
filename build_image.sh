@@ -9,7 +9,7 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
-PATCHES_REF="v1.1"
+PATCHES_REF="kernel-7.0.8-d44cfeb"
 
 MULTI_DISTROS="ubuntu2604 debian13 arch alpine cachyos"
 
