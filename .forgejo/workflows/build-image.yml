@@ -44,13 +44,34 @@ jobs:
         distro: ${{ fromJson(needs.matrix.outputs.distros) }}
 
     env:
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      # Persistent cache lives outside the per-run workspace so kernel
+      # source + .deb/.rpm output + ccache survive between builds.
+      CCACHE_DIR: /data/cache/ps5/ccache
 
     steps:
       - name: Checkout image builder
         uses: actions/checkout@v4
         with:
           path: image
+
+      - name: Wire persistent kernel cache (bust on PATCHES_REF change)
+        run: |
+          set -eux
+          mkdir -p /data/cache/ps5/{linux,kernel-out,ccache}
+          # Cache-bust: if the PATCHES_REF baked into the new checkout differs
+          # from the one the cache was built against, wipe linux/ + kernel-out/.
+          CUR=$(grep -E '^PATCHES_REF=' image/build_image.sh | head -1 | cut -d'"' -f2)
+          OLD=$(cat /data/cache/ps5/.patches-ref 2>/dev/null || echo "")
+          if [ "$CUR" != "$OLD" ]; then
+            echo "PATCHES_REF changed: $OLD -> $CUR, wiping cached kernel"
+            rm -rf /data/cache/ps5/linux /data/cache/ps5/kernel-out
+            mkdir -p /data/cache/ps5/linux /data/cache/ps5/kernel-out
+            echo "$CUR" > /data/cache/ps5/.patches-ref
+          fi
+          # Symlink build_image.sh's expected paths into the persistent cache.
+          mkdir -p image/work
+          ln -sfn /data/cache/ps5/linux       image/work/linux
+          ln -sfn /data/cache/ps5/kernel-out  image/linux-bin
 
       - name: Build ${{ matrix.distro }} image
         run: |
