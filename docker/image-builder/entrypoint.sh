@@ -2,7 +2,8 @@
 set -ex
 
 DISTRO="${DISTRO:-ubuntu2604}"
-IMG_SIZE="${IMG_SIZE:-12000}"
+# Bazzite ships large (~10 GB rootfs after OCI unpack), bump the default img.
+case "${DISTRO}" in bazzite*) IMG_SIZE="${IMG_SIZE:-20000}" ;; *) IMG_SIZE="${IMG_SIZE:-12000}" ;; esac
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
 STAGING="/tmp/build-staging"
 ROOT_LABEL="${DISTRO}"
@@ -71,13 +72,77 @@ EOF
     # --- Build rootfs ---
     rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
 
-    YAML="/repo/distros/${DISTRO}/image.yaml"
-    distrobuilder build-dir "$YAML" "$CHROOT" --with-post-files --cache-dir /build/cache --cleanup=false
+    case "$DISTRO" in
+        bazzite*)
+            # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
+            REF="ghcr.io/ublue-os/bazzite:stable"
+            echo "=== Bazzite: skopeo copy $REF ==="
+            OCI=$(mktemp -d)
+            skopeo copy --override-os linux --override-arch amd64 \
+                "docker://$REF" "oci:$OCI:bazzite"
+            echo "=== umoci unpack -> $CHROOT ==="
+            UNPACK=$(mktemp -d)
+            umoci unpack --keep-dirlinks --image "$OCI:bazzite" "$UNPACK"
+            # umoci layout: $UNPACK/{config.json, rootfs/}
+            mv "$UNPACK/rootfs"/* "$CHROOT/" 2>/dev/null || true
+            mv "$UNPACK/rootfs"/.[!.]* "$CHROOT/" 2>/dev/null || true
+            rm -rf "$UNPACK" "$OCI"
+            # ostree convention: /usr/etc holds the defaults; /etc is empty in
+            # the image. Promote /usr/etc to /etc so the system boots normally.
+            if [ -d "$CHROOT/usr/etc" ]; then
+                cp -an "$CHROOT/usr/etc/." "$CHROOT/etc/" || true
+                rm -rf "$CHROOT/usr/etc"
+            fi
+            # Stage PS5 kernel RPMs + grow-rootfs (the dnf install runs below).
+            mkdir -p "$CHROOT/opt/rpms"
+            cp /kernel-debs/*.rpm "$CHROOT/opt/rpms/"
+            cp /repo/distros/bazzite/grow-rootfs       "$CHROOT/usr/local/sbin/grow-rootfs"
+            chmod +x "$CHROOT/usr/local/sbin/grow-rootfs"
+            cp /repo/distros/bazzite/grow-rootfs.service "$CHROOT/etc/systemd/system/grow-rootfs.service"
+            # Chroot in: disable ostree stack, install PS5 kernel, user setup.
+            mount --bind /proc "$CHROOT/proc"
+            mount --bind /sys  "$CHROOT/sys"
+            mount --bind /dev  "$CHROOT/dev"
+            chroot "$CHROOT" /bin/bash -e <<"BAZIN"
+                # Disable rpm-ostree services — we're a flat fs now.
+                systemctl mask rpm-ostreed.service rpm-ostree-countme.service rpm-ostree-bootstatus.service 2>/dev/null || true
+                # Install PS5 kernel RPM
+                dnf install -y --setopt=install_weak_deps=False /opt/rpms/*.rpm
+                rm -rf /opt/rpms
+                # User setup
+                passwd -l root
+                if ! id ps5 >/dev/null 2>&1; then
+                    useradd -m -s /bin/bash -G wheel,video,audio,input,render ps5
+                fi
+                echo "ps5:ps5" | chpasswd
+                sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || true
+                # Services
+                systemctl enable grow-rootfs.service NetworkManager sshd 2>/dev/null || true
+                # Default DM (Bazzite ships KDE Plasma + SDDM)
+                systemctl enable sddm 2>/dev/null || systemctl enable gdm 2>/dev/null || true
+                # resolv.conf -> systemd-resolved stub
+                rm -f /etc/resolv.conf
+                ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+                # SDDM autologin for ps5
+                mkdir -p /etc/sddm.conf.d
+                cat > /etc/sddm.conf.d/autologin.conf <<SDDM
+[Autologin]
+User=ps5
+Session=plasma
+SDDM
+BAZIN
+            umount "$CHROOT/dev" "$CHROOT/sys" "$CHROOT/proc"
+            ;;
+        *)
+            YAML="/repo/distros/${DISTRO}/image.yaml"
+            distrobuilder build-dir "$YAML" "$CHROOT" --with-post-files --cache-dir /build/cache --cleanup=false
+            ;;
+    esac
 fi
 
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
-    ubuntu*|debian*|fedora*)
+    ubuntu*|debian*|fedora*|bazzite*)
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;

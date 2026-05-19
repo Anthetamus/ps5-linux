@@ -67,10 +67,10 @@ fi
 
 if [ -z "$FORMAT" ]; then
     case "$DISTRO" in
-        arch|cachyos) FORMAT="arch" ;;
-        fedora*)      FORMAT="rpm" ;;
-        all)          FORMAT="all" ;;
-        *)            FORMAT="deb" ;;
+        arch|cachyos)        FORMAT="arch" ;;
+        fedora*|bazzite*)    FORMAT="rpm" ;;
+        all)                 FORMAT="all" ;;
+        *)                   FORMAT="deb" ;;
     esac
 fi
 
