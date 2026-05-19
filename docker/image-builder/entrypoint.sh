@@ -93,22 +93,37 @@ EOF
                 cp -an "$CHROOT/usr/etc/." "$CHROOT/etc/" || true
                 rm -rf "$CHROOT/usr/etc"
             fi
-            # Stage PS5 kernel RPMs + grow-rootfs (the dnf install runs below).
-            mkdir -p "$CHROOT/opt/rpms"
-            cp /kernel-debs/*.rpm "$CHROOT/opt/rpms/"
-            cp /repo/distros/bazzite/grow-rootfs       "$CHROOT/usr/local/sbin/grow-rootfs"
-            chmod +x "$CHROOT/usr/local/sbin/grow-rootfs"
+            # Stage PS5 kernel RPMs + grow-rootfs. /opt and /home are ostree
+            # symlinks in Bazzite, /var is a real dir — drop staging files there.
+            mkdir -p "$CHROOT/var/cache/ps5-rpms"
+            cp /kernel-debs/*.rpm "$CHROOT/var/cache/ps5-rpms/"
+            # /usr/local is a symlink to /var/usrlocal in ostree-based systems;
+            # mkdir the target before cp to avoid following-symlink-on-missing.
+            mkdir -p "$CHROOT/var/usrlocal/sbin"
+            cp /repo/distros/bazzite/grow-rootfs       "$CHROOT/var/usrlocal/sbin/grow-rootfs"
+            chmod +x "$CHROOT/var/usrlocal/sbin/grow-rootfs"
             cp /repo/distros/bazzite/grow-rootfs.service "$CHROOT/etc/systemd/system/grow-rootfs.service"
             # Chroot in: disable ostree stack, install PS5 kernel, user setup.
+            # Trap to always umount, even if the chroot script exits early.
+            cleanup_bazzite_mounts() {
+                for m in dev sys proc; do
+                    mountpoint -q "$CHROOT/$m" && umount "$CHROOT/$m" || true
+                done
+            }
+            trap cleanup_bazzite_mounts RETURN ERR EXIT
             mount --bind /proc "$CHROOT/proc"
             mount --bind /sys  "$CHROOT/sys"
             mount --bind /dev  "$CHROOT/dev"
+            # Bazzite has no /etc/resolv.conf inside the chroot (symlink target
+            # doesn't exist yet) — provide a working one so dnf can reach mirrors.
+            rm -f "$CHROOT/etc/resolv.conf"
+            cp /etc/resolv.conf "$CHROOT/etc/resolv.conf"
             chroot "$CHROOT" /bin/bash -e <<"BAZIN"
                 # Disable rpm-ostree services — we're a flat fs now.
                 systemctl mask rpm-ostreed.service rpm-ostree-countme.service rpm-ostree-bootstatus.service 2>/dev/null || true
                 # Install PS5 kernel RPM
-                dnf install -y --setopt=install_weak_deps=False /opt/rpms/*.rpm
-                rm -rf /opt/rpms
+                dnf install -y --setopt=install_weak_deps=False /var/cache/ps5-rpms/*.rpm
+                rm -rf /var/cache/ps5-rpms
                 # User setup
                 passwd -l root
                 if ! id ps5 >/dev/null 2>&1; then
@@ -131,7 +146,9 @@ User=ps5
 Session=plasma
 SDDM
 BAZIN
-            umount "$CHROOT/dev" "$CHROOT/sys" "$CHROOT/proc"
+            # explicit cleanup (the trap covers the failure path)
+            cleanup_bazzite_mounts
+            trap - RETURN ERR EXIT
             ;;
         *)
             YAML="/repo/distros/${DISTRO}/image.yaml"
