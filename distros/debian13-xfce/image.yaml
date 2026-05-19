@@ -1,5 +1,5 @@
 image:
-  name: ps5-debian13
+  name: ps5-debian13-xfce
   distribution: debian
   release: trixie
   description: Debian 13 Trixie XFCE desktop
