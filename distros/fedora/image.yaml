@@ -103,7 +103,11 @@ actions:
     echo "ps5:ps5" | chpasswd
     sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || true
 
-    # Install the PS5 kernel RPM (built upstream as .deb then alien-converted)
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    # /opt/rpms/ was just copied in by the files: stage — now we can install.
     mkdir -p /boot/efi
     dnf install -y /opt/rpms/*.rpm
     rm -rf /opt/rpms
@@ -111,10 +115,6 @@ actions:
     dracut -f --kver "$KVER" || true
     /etc/kernel/postinst.d/zz-update-boot "$KVER" || true
 
-- trigger: post-files
-  action: |-
-    #!/bin/bash
-    set -eux
     systemctl enable grow-rootfs.service || true
     systemctl enable systemd-resolved
     # Defer /etc/resolv.conf symlink to boot — bind-mounted during build.
