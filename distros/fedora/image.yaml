@@ -27,9 +27,9 @@ packages:
 
   sets:
     - packages:
-      # Desktop (GNOME — Fedora's default)
+      # Desktop (GNOME — Fedora's default).
+      # gnome-session-xsession was removed in F44 (Wayland-only path).
       - gnome-shell
-      - gnome-session-xsession
       - gnome-terminal
       - nautilus
       - gnome-control-center
@@ -143,13 +143,13 @@ actions:
     printf 'L+ /etc/resolv.conf - - - - /run/systemd/resolve/stub-resolv.conf\n' \
         > /etc/tmpfiles.d/resolv-conf.conf
 
-    # GDM autologin
+    # GDM autologin. F44 ships only Wayland session for GNOME — let it run.
+    # amdgpu dpm=0 (set above) should be enough for HDMI to come up.
     mkdir -p /etc/gdm
     cat > /etc/gdm/custom.conf <<GDM
     [daemon]
     AutomaticLoginEnable=True
     AutomaticLogin=ps5
-    WaylandEnable=false
     GDM
     systemctl enable gdm
 
