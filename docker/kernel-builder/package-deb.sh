@@ -24,14 +24,17 @@ if [ -d "$STAGING/etc" ]; then
     cp -a "$STAGING/etc/." "$PKG/etc/"
 fi
 
-# Kernel headers (for out-of-tree module builds)
+# Kernel headers (for out-of-tree module builds).
+# We ship them under /usr/lib/modules/<kver>/build/. The conventional Debian
+# convenience symlink /lib/modules/<kver>/build -> /usr/lib/modules/.../build
+# is intentionally NOT created here — alien's deb->rpm conversion mangles it
+# into a directory-vs-symlink conflict on rpm install. Out-of-tree builds can
+# point KERNELDIR= at /usr/lib/modules/<kver>/build/ explicitly, or recreate
+# the symlink post-install if they want the legacy path.
 if [ -d "$STAGING/headers" ]; then
     cp -a "$STAGING/headers/usr" "$PKG/usr"
-    # Point /lib/modules/$KVER/build at the installed headers
-    HDR_DEST="/usr/lib/modules/$KVER/build"
     mkdir -p "$PKG/usr/lib/modules/$KVER"
     cp -a "$STAGING/headers/lib/modules/$KVER/build" "$PKG/usr/lib/modules/$KVER/build"
-    ln -sf "$HDR_DEST" "$PKG/lib/modules/$KVER/build"
 fi
 
 cat > "$PKG/DEBIAN/control" << CTRL
