@@ -109,11 +109,13 @@ actions:
     set -eux
     # /opt/rpms/ was just copied in by the files: stage — now we can install.
     mkdir -p /boot/efi
-    # Our alien-converted kernel RPM ships /usr/include/asm-generic/* which
-    # collides with Fedora's kernel-headers. --allowerasing removes the
-    # conflicting Fedora packages. Dedupe to avoid the same .rpm listed twice.
-    RPMS=$(ls -1 /opt/rpms/*.rpm | sort -u)
-    dnf install -y --allowerasing $RPMS
+    # Our alien-converted kernel RPM ships /usr/include/{linux,asm,rdma,...}/*
+    # which file-level-conflicts with Fedora's kernel-headers package. dnf's
+    # --allowerasing only handles package-level Obsoletes, not file conflicts.
+    # rpm -Uvh --replacefiles is the right tool: overwrite the conflicting
+    # files in place, leave kernel-headers metadata alone (Fedora's deps
+    # don't care because nothing requires the literal file paths).
+    rpm -Uvh --replacefiles --replacepkgs /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
     dracut -f --kver "$KVER" || true

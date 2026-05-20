@@ -121,8 +121,10 @@ EOF
             chroot "$CHROOT" /bin/bash -e <<"BAZIN"
                 # Disable rpm-ostree services — we're a flat fs now.
                 systemctl mask rpm-ostreed.service rpm-ostree-countme.service rpm-ostree-bootstatus.service 2>/dev/null || true
-                # Install PS5 kernel RPM
-                dnf install -y --setopt=install_weak_deps=False /var/cache/ps5-rpms/*.rpm
+                # Install PS5 kernel via rpm --replacefiles (handles the file-
+                # level conflict between our /usr/include/* headers and
+                # Bazzite's kernel-headers; see fedora image.yaml comment).
+                rpm -Uvh --replacefiles --replacepkgs /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
                 # User setup
                 passwd -l root
