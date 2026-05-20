@@ -66,6 +66,17 @@ if [ "$DISTRO" = "all" ] && [ "$IMG_SIZE" = "12000" ]; then
     IMG_SIZE=32000
 fi
 
+# Bazzite assembles the OCI rootfs + an embedded /sysroot/ostree/repo/objects
+# (deduplicated copy of the same content) + the linux-ps5 kernel — 12GB is
+# not enough. Bump the default for any bazzite* target.
+case "$DISTRO" in
+    bazzite*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=24000
+        fi
+        ;;
+esac
+
 if [ -z "$FORMAT" ]; then
     case "$DISTRO" in
         arch|cachyos)        FORMAT="arch" ;;
