@@ -1,8 +1,8 @@
 image:
   name: ps5-fedora
   distribution: fedora
-  release: "42"
-  description: Fedora 42 Workstation (GNOME)
+  release: "44"
+  description: Fedora 44 Workstation (GNOME)
   architecture: x86_64
 
 source:

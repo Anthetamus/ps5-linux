@@ -195,7 +195,7 @@ jobs:
                  '',
                  '## Images',
                  '| Image | Download |','|-------|----------|']
-          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine'),('fedora','Fedora 42 (GNOME)'),('fedora-kde','Fedora 42 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)')]:
+          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine'),('fedora','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)')]:
               f=f'ps5-{distro}.img.xz'
               lines.append(f'| {label} | [{f}]({rel}/{f}) |')
           lines += ['','**SHA256 checksums:**','```',sums.strip(),'```']
