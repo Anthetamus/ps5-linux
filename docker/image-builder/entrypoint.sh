@@ -128,6 +128,11 @@ EOF
                 rm -rf /lib/modules/*
                 rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
+                # Build the initrd at the path zz-update-boot expects, then
+                # deploy bzImage+initrd to /boot/efi/ for the PS5 kexec loader.
+                KVER=$(ls -1t /lib/modules | head -1)
+                dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
+                /etc/kernel/postinst.d/zz-update-boot "$KVER"
                 # User setup. Bazzite's slim OCI image doesn't pre-create the
                 # video/audio/input/render groups, and useradd -G fails on
                 # missing groups under bash -e. Build the list dynamically.

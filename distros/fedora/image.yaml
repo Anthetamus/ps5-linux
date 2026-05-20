@@ -123,8 +123,12 @@ actions:
     rpm -Uvh --replacefiles --replacepkgs --nodeps /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
-    dracut -f --kver "$KVER" || true
-    /etc/kernel/postinst.d/zz-update-boot "$KVER" || true
+    # zz-update-boot copies /boot/initrd.img-$KVER to /boot/efi/initrd.img.
+    # dracut's default name is /boot/initramfs-$KVER.img — pass the explicit
+    # path so we get the Debian-style filename and don't drop || true on the
+    # actual error.
+    dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
+    /etc/kernel/postinst.d/zz-update-boot "$KVER"
 
     systemctl enable grow-rootfs.service || true
     systemctl enable systemd-resolved
