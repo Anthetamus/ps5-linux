@@ -123,6 +123,12 @@ actions:
     rpm -Uvh --replacefiles --replacepkgs --nodeps /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
+    # amdgpu options — PS5's Oberon GPU needs dpm disabled or HDMI stays dark.
+    # Drop this BEFORE dracut so it lands in the initramfs (amdgpu loads early).
+    mkdir -p /etc/modprobe.d
+    cat > /etc/modprobe.d/ps5-amdgpu.conf <<MODPROBE
+    options amdgpu dpm=0 gpu_recovery=0
+    MODPROBE
     # zz-update-boot copies /boot/initrd.img-$KVER to /boot/efi/initrd.img.
     # dracut's default name is /boot/initramfs-$KVER.img — pass the explicit
     # path so we get the Debian-style filename and don't drop || true on the

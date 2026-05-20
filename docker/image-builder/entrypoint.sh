@@ -128,6 +128,12 @@ EOF
                 rm -rf /lib/modules/*
                 rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
+                # amdgpu options — PS5 Oberon GPU needs dpm disabled or HDMI
+                # stays dark. Must land in initramfs (amdgpu loads early).
+                mkdir -p /etc/modprobe.d
+                cat > /etc/modprobe.d/ps5-amdgpu.conf <<AMDGPU
+options amdgpu dpm=0 gpu_recovery=0
+AMDGPU
                 # Build the initrd at the path zz-update-boot expects, then
                 # deploy bzImage+initrd to /boot/efi/ for the PS5 kexec loader.
                 KVER=$(ls -1t /lib/modules | head -1)
