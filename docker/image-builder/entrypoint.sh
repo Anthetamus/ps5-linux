@@ -153,16 +153,17 @@ AMDGPU
                 mkdir -p /boot/efi
                 cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
                 cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
-                # User setup. Bazzite's slim OCI image doesn't pre-create the
-                # video/audio/input/render groups, and useradd -G fails on
-                # missing groups under bash -e. Build the list dynamically.
+                # User setup. Bazzite exposes video/audio/input/render via
+                # systemd-userdbd (so getent finds them) but they aren't in
+                # /etc/group, and useradd writes to /etc/group directly — so
+                # `useradd -G video,...` fails. Materialize them with
+                # groupadd -f (idempotent) before useradd.
                 passwd -l root
-                GRPS="wheel"
-                for g in video audio input render; do
-                    getent group "$g" >/dev/null 2>&1 && GRPS="$GRPS,$g"
+                for g in wheel video audio input render; do
+                    groupadd -f "$g"
                 done
                 if ! id ps5 >/dev/null 2>&1; then
-                    useradd -m -s /bin/bash -G "$GRPS" ps5
+                    useradd -m -s /bin/bash -G wheel,video,audio,input,render ps5
                 fi
                 echo "ps5:ps5" | chpasswd
                 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || true
