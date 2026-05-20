@@ -121,6 +121,17 @@ EOF
             chroot "$CHROOT" /bin/bash -e <<"BAZIN"
                 # Disable rpm-ostree services — we're a flat fs now.
                 systemctl mask rpm-ostreed.service rpm-ostree-countme.service rpm-ostree-bootstatus.service 2>/dev/null || true
+                # Bazzite/rpm-ostree convention: /root is a symlink to
+                # /var/roothome which doesn't exist in the OCI extract.
+                # dracut's hostonly enumeration follows the symlink, hits
+                # ENOENT, fails with `dracut-install: ERROR: installing '/root'`.
+                # Make /root a real dir so dracut + the kernel postinst's own
+                # dracut call both work.
+                mkdir -p /var/roothome
+                if [ -L /root ]; then
+                    rm -f /root
+                    mkdir -m 0700 /root
+                fi
                 # Install PS5 kernel via rpm --replacefiles (handles the file-
                 # level conflict between our /usr/include/* headers and
                 # Bazzite's kernel-headers; see fedora image.yaml comment).
@@ -134,11 +145,14 @@ EOF
                 cat > /etc/modprobe.d/ps5-amdgpu.conf <<AMDGPU
 options amdgpu dpm=0 gpu_recovery=0
 AMDGPU
-                # Build the initrd at the path zz-update-boot expects, then
-                # deploy bzImage+initrd to /boot/efi/ for the PS5 kexec loader.
+                # Build the initrd, then deploy bzImage+initrd to /boot/efi/
+                # for the PS5 kexec loader. (zz-update-boot is the deb-flow
+                # helper; bazzite never stages it, so we inline the copies.)
                 KVER=$(ls -1t /lib/modules | head -1)
                 dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
-                /etc/kernel/postinst.d/zz-update-boot "$KVER"
+                mkdir -p /boot/efi
+                cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
+                cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
                 # User setup. Bazzite's slim OCI image doesn't pre-create the
                 # video/audio/input/render groups, and useradd -G fails on
                 # missing groups under bash -e. Build the list dynamically.
