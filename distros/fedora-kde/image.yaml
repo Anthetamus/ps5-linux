@@ -125,8 +125,15 @@ actions:
     rpm -Uvh --replacefiles --replacepkgs --nodeps /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
-    dracut -f --kver "$KVER" || true
-    /etc/kernel/postinst.d/zz-update-boot "$KVER" || true
+    # amdgpu options — PS5's Oberon GPU needs dpm disabled or HDMI stays dark.
+    # Drop this BEFORE dracut so it lands in the initramfs.
+    mkdir -p /etc/modprobe.d
+    cat > /etc/modprobe.d/ps5-amdgpu.conf <<MODPROBE
+    options amdgpu dpm=0 gpu_recovery=0
+    MODPROBE
+    # Explicit initrd path so zz-update-boot finds /boot/initrd.img-$KVER.
+    dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
+    /etc/kernel/postinst.d/zz-update-boot "$KVER"
 
     systemctl enable grow-rootfs.service || true
     systemctl enable systemd-resolved
