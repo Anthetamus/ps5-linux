@@ -124,6 +124,8 @@ EOF
                 # Install PS5 kernel via rpm --replacefiles (handles the file-
                 # level conflict between our /usr/include/* headers and
                 # Bazzite's kernel-headers; see fedora image.yaml comment).
+                # Bazzite ships kernel modules as a dir; our rpm wants a symlink.
+                rm -rf /lib/modules/*
                 rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
                 # User setup

@@ -115,6 +115,11 @@ actions:
     # rpm -Uvh --replacefiles is the right tool: overwrite the conflicting
     # files in place, leave kernel-headers metadata alone (Fedora's deps
     # don't care because nothing requires the literal file paths).
+    # Fedora's kernel packages pre-create /lib/modules/<ver>/ as a real dir,
+    # but our linux-ps5 wants /lib/modules/<ver>/build to be a SYMLINK to
+    # /usr/lib/modules/.../build. rpm can't reconcile dir <-> symlink even
+    # with --replacefiles, so wipe the staged Fedora kernel tree first.
+    rm -rf /lib/modules/*
     rpm -Uvh --replacefiles --replacepkgs --nodeps /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
