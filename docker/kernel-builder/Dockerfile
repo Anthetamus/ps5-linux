@@ -3,6 +3,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     build-essential bc bison dwarves flex kmod cpio gawk \
     libdw-dev libelf-dev libssl-dev \
     python3 rsync dpkg-dev debhelper zstd \
