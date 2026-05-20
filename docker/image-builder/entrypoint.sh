@@ -162,16 +162,20 @@ AMDGPU
                 # preserving the NSS-assigned GID when there is one so
                 # existing file ownerships in the rootfs stay correct.
                 passwd -l root
+                # Ensure /etc/gshadow exists with the right perms; useradd
+                # refuses to "prepare new entry" silently if it's missing.
+                [ -e /etc/gshadow ] || { touch /etc/gshadow; chmod 0 /etc/gshadow; }
                 for g in wheel video audio input render; do
                     if ! grep -q "^${g}:" /etc/group; then
                         gid=$(getent group "$g" 2>/dev/null | cut -d: -f3 || true)
-                        if [ -n "$gid" ]; then
-                            echo "${g}:x:${gid}:" >> /etc/group
-                            echo "${g}:!::" >> /etc/gshadow 2>/dev/null || true
-                        else
-                            groupadd --system "$g"
+                        if [ -z "$gid" ]; then
+                            # Pick the next free system gid (100-999).
+                            gid=$(awk -F: 'BEGIN{m=100} $3>=100 && $3<1000 && $3>m {m=$3} END{print m+1}' /etc/group)
                         fi
+                        echo "${g}:x:${gid}:" >> /etc/group
                     fi
+                    # Always make sure /etc/gshadow has a row.
+                    grep -q "^${g}:" /etc/gshadow || echo "${g}:!::" >> /etc/gshadow
                 done
                 if ! id ps5 >/dev/null 2>&1; then
                     useradd -m -s /bin/bash -G wheel,video,audio,input,render ps5
