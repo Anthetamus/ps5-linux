@@ -121,6 +121,18 @@ EOF
             chroot "$CHROOT" /bin/bash -e <<"BAZIN"
                 # Disable rpm-ostree services — we're a flat fs now.
                 systemctl mask rpm-ostreed.service rpm-ostree-countme.service rpm-ostree-bootstatus.service 2>/dev/null || true
+                # Drop the embedded ostree object store + deploy tree. With
+                # rpm-ostree masked, the running rootfs is the flat OCI
+                # extract — /sysroot/ostree/repo/objects/ is a deduplicated
+                # second copy of the same content (~5GB+), and /ostree/
+                # deploy/ holds yet another. Wiping them shrinks the disk
+                # image roughly in half. Leave the dir skeleton in case
+                # anything probes for it.
+                rm -rf /sysroot/ostree/repo/objects \
+                       /sysroot/ostree/repo/refs \
+                       /sysroot/ostree/deploy
+                mkdir -p /sysroot/ostree/repo/objects \
+                         /sysroot/ostree/repo/refs/heads
                 # Bazzite/rpm-ostree convention: /root is a symlink to
                 # /var/roothome which doesn't exist in the OCI extract.
                 # dracut's hostonly enumeration follows the symlink, hits
