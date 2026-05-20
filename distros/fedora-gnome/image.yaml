@@ -1,5 +1,5 @@
 image:
-  name: ps5-fedora
+  name: ps5-fedora-gnome
   distribution: fedora
   release: "44"
   description: Fedora 44 Workstation (GNOME)
