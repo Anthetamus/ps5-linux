@@ -115,7 +115,7 @@ actions:
     # rpm -Uvh --replacefiles is the right tool: overwrite the conflicting
     # files in place, leave kernel-headers metadata alone (Fedora's deps
     # don't care because nothing requires the literal file paths).
-    rpm -Uvh --replacefiles --replacepkgs /opt/rpms/*.rpm
+    rpm -Uvh --replacefiles --replacepkgs --nodeps /opt/rpms/*.rpm
     rm -rf /opt/rpms
     KVER=$(ls -1t /lib/modules | head -1)
     dracut -f --kver "$KVER" || true
