@@ -128,10 +128,16 @@ EOF
                 rm -rf /lib/modules/*
                 rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
-                # User setup
+                # User setup. Bazzite's slim OCI image doesn't pre-create the
+                # video/audio/input/render groups, and useradd -G fails on
+                # missing groups under bash -e. Build the list dynamically.
                 passwd -l root
+                GRPS="wheel"
+                for g in video audio input render; do
+                    getent group "$g" >/dev/null 2>&1 && GRPS="$GRPS,$g"
+                done
                 if ! id ps5 >/dev/null 2>&1; then
-                    useradd -m -s /bin/bash -G wheel,video,audio,input,render ps5
+                    useradd -m -s /bin/bash -G "$GRPS" ps5
                 fi
                 echo "ps5:ps5" | chpasswd
                 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || true
