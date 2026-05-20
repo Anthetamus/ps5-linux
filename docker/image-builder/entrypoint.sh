@@ -154,13 +154,24 @@ AMDGPU
                 cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
                 cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
                 # User setup. Bazzite exposes video/audio/input/render via
-                # systemd-userdbd (so getent finds them) but they aren't in
-                # /etc/group, and useradd writes to /etc/group directly — so
-                # `useradd -G video,...` fails. Materialize them with
-                # groupadd -f (idempotent) before useradd.
+                # systemd-userdbd, so `getent group video` returns a row —
+                # and `groupadd -f` short-circuits as "already exists" and
+                # does nothing. But useradd reads /etc/group directly (no
+                # NSS), sees an empty file, and bails with "group X does not
+                # exist". Materialize each group into /etc/group ourselves,
+                # preserving the NSS-assigned GID when there is one so
+                # existing file ownerships in the rootfs stay correct.
                 passwd -l root
                 for g in wheel video audio input render; do
-                    groupadd -f "$g"
+                    if ! grep -q "^${g}:" /etc/group; then
+                        gid=$(getent group "$g" 2>/dev/null | cut -d: -f3 || true)
+                        if [ -n "$gid" ]; then
+                            echo "${g}:x:${gid}:" >> /etc/group
+                            echo "${g}:!::" >> /etc/gshadow 2>/dev/null || true
+                        else
+                            groupadd --system "$g"
+                        fi
+                    fi
                 done
                 if ! id ps5 >/dev/null 2>&1; then
                     useradd -m -s /bin/bash -G wheel,video,audio,input,render ps5
