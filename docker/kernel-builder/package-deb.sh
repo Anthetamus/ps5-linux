@@ -54,31 +54,36 @@ set -e
 KVER="$(ls -1t /lib/modules | head -1)"
 echo ">> linux-ps5 postinst: kernel $KVER"
 
-# Rebuild initramfs
+# Rebuild initramfs (use whichever tool the host provides).
 if command -v update-initramfs >/dev/null 2>&1; then
     echo ">> Rebuilding initramfs with update-initramfs for $KVER"
     update-initramfs -c -k "$KVER"
 elif command -v mkinitcpio >/dev/null 2>&1; then
     echo ">> Rebuilding initramfs with mkinitcpio for $KVER"
     mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER"
+elif command -v dracut >/dev/null 2>&1; then
+    echo ">> Rebuilding initramfs with dracut for $KVER"
+    dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
 elif command -v mkinitfs >/dev/null 2>&1; then
     echo ">> Rebuilding initramfs with mkinitfs for $KVER"
     mkinitfs -o "/boot/initrd.img-$KVER" "$KVER"
+else
+    echo ">> No initramfs tool found; skipping initramfs build"
 fi
 
-# Copy kernel + initrd to EFI partition
+# Copy kernel + initrd to EFI partition (only the bits that exist).
 if [ -d /boot/efi ]; then
-    OLD_BZ=$(ls -l /boot/efi/bzImage 2>/dev/null | awk '{print $5}') || true
-    OLD_INITRD=$(ls -l /boot/efi/initrd.img 2>/dev/null | awk '{print $5}') || true
-    echo ">> Copying /boot/vmlinuz-$KVER -> /boot/efi/bzImage"
-    cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
-    NEW_BZ=$(ls -l /boot/efi/bzImage | awk '{print $5}')
-    echo ">>   bzImage: ${OLD_BZ:-<new>} -> $NEW_BZ bytes"
-    echo ">> Copying /boot/initrd.img-$KVER -> /boot/efi/initrd.img"
-    cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
-    NEW_INITRD=$(ls -l /boot/efi/initrd.img | awk '{print $5}')
-    echo ">>   initrd.img: ${OLD_INITRD:-<new>} -> $NEW_INITRD bytes"
-    echo ">> Kernel $KVER deployed to /boot/efi"
+    if [ -f "/boot/vmlinuz-$KVER" ]; then
+        echo ">> Copying /boot/vmlinuz-$KVER -> /boot/efi/bzImage"
+        cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
+    fi
+    if [ -f "/boot/initrd.img-$KVER" ]; then
+        echo ">> Copying /boot/initrd.img-$KVER -> /boot/efi/initrd.img"
+        cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
+    else
+        echo ">> /boot/initrd.img-$KVER not built yet; deferring initrd copy"
+    fi
+    echo ">> Kernel $KVER files deployed (where available) to /boot/efi"
 else
     echo ">> /boot/efi not found, skipping EFI deploy"
 fi
