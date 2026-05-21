@@ -21,6 +21,16 @@ jobs:
         id: cmp
         run: |
           set -euo pipefail
+          # If we've forked PATCHES_REPO away from upstream (to carry local
+          # kernel fixes), skip the auto-bump — upstream's latest tag won't
+          # exist in the fork, and overwriting our pinned ref would clobber
+          # the local fixes.
+          REPO=$(grep -E '^PATCHES_REPO=' build_image.sh | head -1 | cut -d'"' -f2)
+          if [ "$REPO" != "https://github.com/ps5-linux/ps5-linux-patches.git" ]; then
+            echo "PATCHES_REPO is a fork ($REPO) — skipping auto-bump."
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           LATEST=$(git ls-remote --tags https://github.com/ps5-linux/ps5-linux-patches.git \
             | grep -oE 'kernel-[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]+' \
             | sort -V \
