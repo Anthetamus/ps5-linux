@@ -282,7 +282,10 @@ else
             [ ${#patches[@]} -eq 0 ] && { echo "No .patch files found in '"$PATCHES_DIR"'"; exit 1; }
             for p in "${patches[@]}"; do
                 echo "Applying $p"
-                git -C "'"$LINUX_TMP_DIR"'" apply --exclude=Makefile "$p"
+                # --recount makes git ignore hunk-header line numbers and
+                # recount from content. Lets us land patches whose first
+                # hunk grew without manually fixing every later @@ offset.
+                git -C "'"$LINUX_TMP_DIR"'" apply --recount --exclude=Makefile "$p"
             done'
 
         run_stage "Copy kernel config" \
