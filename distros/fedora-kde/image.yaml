@@ -36,6 +36,16 @@ packages:
       - konsole
       - dolphin
       - sddm
+      # Standard Plasma utilities — Fedora's minimal install doesn't pull
+      # most of these. Adds System Monitor, image viewer, archive manager,
+      # PDF viewer, screenshot tool, diff viewer.
+      - plasma-systemmonitor
+      - ksystemstats
+      - gwenview
+      - ark
+      - okular
+      - spectacle
+      - kdiff3
 
       # Display / GPU
       - mesa-vulkan-drivers
@@ -71,6 +81,12 @@ packages:
       - kernel-modules
       - kernel-modules-extra
       - zram-generator
+      # First-boot rootfs grow (grow-rootfs.service needs both binaries)
+      - cloud-utils-growpart
+      - parted
+      # NTP — PS5's RTC is wrong on boot; without this the clock is years off
+      # and TLS handshakes fail.
+      - chrony
 
       # Base tools
       - bash
@@ -137,6 +153,15 @@ actions:
 
     systemctl enable grow-rootfs.service || true
     systemctl enable systemd-resolved
+    # NTP. Fedora ships chrony as the default NTP client; enable it so the
+    # PS5's empty/wrong RTC doesn't leave the clock years off (which breaks
+    # TLS and most package operations).
+    systemctl enable chronyd || true
+    # Virtual terminals. Fedora's preset enables getty@tty1 only; tie F2..F6
+    # in by hand so Ctrl+Alt+F2..F6 give real text consoles.
+    for n in 2 3 4 5 6; do
+        systemctl enable getty@tty${n}.service 2>/dev/null || true
+    done
     # Defer /etc/resolv.conf symlink to boot — bind-mounted during build.
     mkdir -p /etc/tmpfiles.d
     printf 'L+ /etc/resolv.conf - - - - /run/systemd/resolve/stub-resolv.conf\n' \

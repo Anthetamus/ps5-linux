@@ -1,8 +1,9 @@
 [Unit]
 Description=Grow root filesystem to fill disk
-DefaultDependencies=no
-Before=local-fs-pre.target
 After=systemd-remount-fs.service
+# grow-rootfs uses findmnt + growpart on the live /, which needs the
+# rootfs mounted RW and userspace tooling available. Drop the
+# initramfs-era ordering the previous version used.
 
 [Service]
 Type=oneshot
