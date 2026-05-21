@@ -194,8 +194,35 @@ AMDGPU
                 fi
                 echo "ps5:ps5" | chpasswd
                 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || true
+
+                # Install pieces Bazzite's slim OCI image is missing.
+                #   cloud-utils-growpart + parted: grow-rootfs needs growpart
+                #     and partprobe — without them the rootfs stays sized to
+                #     the build image (~10GB) on whatever USB it lands on.
+                #   plasma-systemmonitor + ksystemstats: standard Plasma
+                #     "System Monitor" app. Bazzite's container drops it.
+                #   kdiff3 / gwenview / ark / okular / spectacle: rest of
+                #     the Plasma utilities most people expect.
+                #   chrony: NTP. PS5's RTC is wrong on boot; without an NTP
+                #     client the system clock is years off and TLS breaks.
+                dnf install -y --setopt=install_weak_deps=False \
+                    cloud-utils-growpart parted \
+                    plasma-systemmonitor ksystemstats \
+                    kdiff3 gwenview ark okular spectacle \
+                    chrony \
+                    || echo "WARN: dnf install failed; some pkgs may be missing"
+
                 # Services
                 systemctl enable grow-rootfs.service NetworkManager sshd 2>/dev/null || true
+                # Time sync. Prefer systemd-timesyncd if present (lighter);
+                # fall back to chrony (which we just dnf-installed).
+                systemctl enable systemd-timesyncd 2>/dev/null \
+                    || systemctl enable chronyd 2>/dev/null || true
+                # Virtual terminals. Bazzite's preset disables getty@tty2-6;
+                # explicitly enable them so Ctrl+Alt+F2..F6 give text consoles.
+                for n in 2 3 4 5 6; do
+                    systemctl enable getty@tty${n}.service 2>/dev/null || true
+                done
                 # Default DM (Bazzite ships KDE Plasma + SDDM)
                 systemctl enable sddm 2>/dev/null || systemctl enable gdm 2>/dev/null || true
                 # resolv.conf -> systemd-resolved stub
