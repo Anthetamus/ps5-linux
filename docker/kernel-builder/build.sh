@@ -62,6 +62,61 @@ softdep moal pre: cfg80211 mlan
 options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=1 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
 MODPROBE
 
+# Auto-load moal at boot. The NXP OOT driver doesn't expose a PCI
+# MODULE_DEVICE_TABLE() that udev coldplug recognises, so without this
+# the user has to `sudo modprobe moal` to bring WLAN up.
+mkdir -p /out/staging/etc/modules-load.d
+cat > /out/staging/etc/modules-load.d/ps5-iw620.conf <<'EOF'
+moal
+EOF
+
+# Firmware staging. The PS5 WLAN firmware blob
+# (nxp/pcieuartiw620_combo_v1.bin) is placed on the FAT32 EFI partition
+# by ps5-linux-loader at /boot/efi/lib/nxp/. moal calls request_firmware()
+# which searches /lib/firmware/, so we need a copy on boot. The blob is
+# Sony-proprietary, so we can't bake it into the image.
+mkdir -p /out/staging/usr/local/sbin
+cat > /out/staging/usr/local/sbin/ps5-stage-firmware <<'EOF'
+#!/bin/sh
+set -eu
+FW=nxp/pcieuartiw620_combo_v1.bin
+DST=/lib/firmware/$FW
+[ -e "$DST" ] && exit 0
+for d in /boot/efi /efi /boot; do
+    SRC="$d/lib/$FW"
+    if [ -f "$SRC" ]; then
+        install -Dm0644 "$SRC" "$DST"
+        echo "ps5-stage-firmware: copied $SRC -> $DST"
+        # Reload moal so it picks up firmware now that it exists.
+        modprobe -r moal mlan 2>/dev/null || true
+        modprobe moal 2>/dev/null || true
+        exit 0
+    fi
+done
+echo "ps5-stage-firmware: $FW not found on EFI partition; skipping"
+exit 0
+EOF
+chmod +x /out/staging/usr/local/sbin/ps5-stage-firmware
+
+mkdir -p /out/staging/etc/systemd/system/sysinit.target.wants
+cat > /out/staging/etc/systemd/system/ps5-stage-firmware.service <<'EOF'
+[Unit]
+Description=Copy PS5 WLAN firmware from EFI partition to /lib/firmware
+After=local-fs.target
+Before=systemd-modules-load.service network-pre.target
+ConditionPathExists=/usr/local/sbin/ps5-stage-firmware
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-stage-firmware
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+EOF
+ln -sf ../ps5-stage-firmware.service \
+    /out/staging/etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
+
 # Record the refs we built against (used in release-body rendering later).
 echo "$MWIFIEX_REF" > /out/staging/mwifiex-ref
 echo "$NXP_REF"     > /out/staging/nxp-ref

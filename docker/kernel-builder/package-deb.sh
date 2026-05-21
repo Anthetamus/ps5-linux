@@ -18,10 +18,17 @@ cp "$STAGING/System.map"    "$PKG/boot/System.map-$KVER"
 cp "$STAGING/.config"       "$PKG/boot/config-$KVER"
 cp -a "$STAGING/lib/modules/$KVER" "$PKG/lib/modules/"
 
-# PS5 mwifiex modprobe config (built alongside the kernel modules in build.sh).
+# PS5 mwifiex modprobe config + modules-load + ps5-stage-firmware
+# systemd unit, staged by build.sh into /out/staging.
 if [ -d "$STAGING/etc" ]; then
     mkdir -p "$PKG/etc"
     cp -a "$STAGING/etc/." "$PKG/etc/"
+fi
+# ps5-stage-firmware script lives in /usr/local/sbin (referenced by the
+# unit above). Stage that branch too.
+if [ -d "$STAGING/usr" ]; then
+    mkdir -p "$PKG/usr"
+    cp -a "$STAGING/usr/." "$PKG/usr/"
 fi
 
 # Kernel headers (for out-of-tree module builds).
