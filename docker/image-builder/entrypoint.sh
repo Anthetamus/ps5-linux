@@ -228,13 +228,51 @@ AMDGPU
                 # resolv.conf -> systemd-resolved stub
                 rm -f /etc/resolv.conf
                 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-                # SDDM autologin for ps5
+                # Autologin straight into Bazzite's gamescope session (Steam
+                # Big-Picture / Deck UI) — Bazzite is gaming-focused, and a
+                # field report said it landed on the Plasma desktop instead
+                # of gamemode. Pick whichever gamescope session file exists,
+                # fall back to plasma if Bazzite stripped them.
                 mkdir -p /etc/sddm.conf.d
+                SESSION=plasma
+                for s in gamescope-session-plus.desktop gamescope-session.desktop steam-wayland.desktop; do
+                    if [ -e "/usr/share/wayland-sessions/$s" ] || [ -e "/usr/share/xsessions/$s" ]; then
+                        SESSION="${s%.desktop}"
+                        break
+                    fi
+                done
                 cat > /etc/sddm.conf.d/autologin.conf <<SDDM
 [Autologin]
 User=ps5
-Session=plasma
+Session=$SESSION
 SDDM
+
+                # DTM TA race workaround. amdgpu's display-topology TA
+                # (Trusted Application) loads async via PSP; if DRM probes
+                # connectors before that finishes, you get
+                #   [drm] Failed to add display topology, DTM TA is not initialized
+                # and the screen stays dark until the user manually toggles
+                # VT (ctrl+alt+F7 -> ctrl+alt+F1) which forces a re-probe.
+                # Mimic that automatically: after amdgpu binds, wait a beat
+                # then re-trigger DRM connector detection.
+                mkdir -p /usr/local/sbin /etc/udev/rules.d
+                cat > /usr/local/sbin/ps5-amdgpu-reprobe <<'POKE'
+#!/bin/sh
+# Wait for PSP/TA firmware to settle, then re-probe DRM connectors.
+# Equivalent of the ctrl+alt+F7 / ctrl+alt+F1 dance.
+(
+    sleep 3
+    for c in /sys/class/drm/card*-*/status; do
+        [ -w "$c" ] && echo detect > "$c"
+    done
+) &
+POKE
+                chmod +x /usr/local/sbin/ps5-amdgpu-reprobe
+                cat > /etc/udev/rules.d/70-ps5-amdgpu-reprobe.rules <<'UDEV'
+# Re-trigger DRM hotplug after amdgpu binds, so the DTM TA-not-initialized
+# race doesn't leave the user with a dark screen until they manually VT-cycle.
+SUBSYSTEM=="drm", ACTION=="add", KERNEL=="card[0-9]*", RUN+="/usr/local/sbin/ps5-amdgpu-reprobe"
+UDEV
 BAZIN
             # explicit cleanup (the trap covers the failure path)
             cleanup_bazzite_mounts
