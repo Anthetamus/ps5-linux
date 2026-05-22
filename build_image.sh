@@ -281,6 +281,7 @@ esac
 if [ "$SKIP_KERNEL" = true ]; then
     printf "  ✓ %-60s\n" "Kernel packages (cached)"
 else
+    set -x  # DEBUG: trace the kernel source setup
     if [ ! -d "$KERNEL_SRC/.git" ]; then
         REPO_URL="$PATCHES_REPO"
         [ -n "$PATCHES_TOKEN" ] && REPO_URL="${PATCHES_REPO/https:\/\//https:\/\/${PATCHES_TOKEN}@}"
@@ -328,14 +329,26 @@ else
         # The docker-alpine-rm guard at the top of this block only fires
         # when the dir exists at script start; this catches the case where
         # the dir reappears mid-run (cache mount races, prior task leftover).
+        echo "DEBUG: pre-mv state of LINUX_DEFAULT_DIR=$LINUX_DEFAULT_DIR"
+        ls -la "$(dirname "$LINUX_DEFAULT_DIR")"
+        echo "DEBUG: LINUX_TMP_DIR=$LINUX_TMP_DIR has:"
+        ls -la "$LINUX_TMP_DIR" | head -5
         [ -e "$LINUX_DEFAULT_DIR" ] && rm -rf "$LINUX_DEFAULT_DIR"
         mv "$LINUX_TMP_DIR" "$LINUX_DEFAULT_DIR"
+        echo "DEBUG: post-mv state of $LINUX_DEFAULT_DIR:"
+        ls -la "$LINUX_DEFAULT_DIR" | head -5
+        echo "DEBUG: ls -la work:"
+        ls -la "$(dirname "$LINUX_DEFAULT_DIR")"
         KERNEL_SRC="$LINUX_DEFAULT_DIR"
     else
         printf "  ✓ %-60s\n" "Kernel source (cached)"
     fi
 
+    set +x  # DEBUG: end trace
+    echo "DEBUG: pre-cd KERNEL_SRC=$KERNEL_SRC"
     KERNEL_SRC="$(cd "$KERNEL_SRC" && pwd)"
+    echo "DEBUG: post-cd KERNEL_SRC=$KERNEL_SRC ls -la:"
+    ls -la "$KERNEL_SRC" | head -5
 
     rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst
 
