@@ -15,16 +15,14 @@ on:
         type: string
         default: 'ubuntu2604'
 
-# Serialize release uploads. Without this, two concurrent "all" runs (or
-# a manual single-distro dispatch racing an in-flight all run) will both
-# DELETE-then-PUT against the same 'latest' release, and the loser's
-# upload gets clobbered — that's how ps5-bazzite.img.xz disappeared from
-# the release after a recent overlap. cancel-in-progress=false means
-# the second dispatch queues behind the first instead of cancelling it.
-concurrency:
-  group: release-latest
-  cancel-in-progress: false
-
+# NOTE: removed `concurrency: release-latest` block. Forgejo 15.0.1's
+# concurrency support is fragile here — when a prior run gets stuck or
+# cancelled via DB intervention, the lock stays "held" in Forgejo's
+# in-memory queue, which silently auto-cancels every subsequent dispatch
+# without ever scheduling a matrix task. Cleared dozens of phantom-
+# cancelled runs while debugging the batocera build. Replace with a
+# flock at the upload-asset step inside the build job (file lock on
+# /data/cache/ps5/.release-upload.lock).
 jobs:
   matrix:
     runs-on: self-hosted
@@ -156,26 +154,40 @@ jobs:
           API="$SERVER/api/v1/repos/$REPO"
           UA="ci-image-uploader/1.0"
           AUTH="Authorization: token $FORGEJO_TOKEN"
-          # Get-or-create the 'latest' release.
-          REL_ID=$(curl -sS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/tags/latest" \
-            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id","") if isinstance(d,dict) else "")' \
-            || true)
-          if [ -z "$REL_ID" ]; then
-            REL_ID=$(curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" -H "Content-Type: application/json" \
-              "$API/releases" \
-              -d '{"tag_name":"latest","name":"PS5 Linux Image (latest)","body":"build in progress","draft":false,"prerelease":false}' \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
-          fi
-          # Delete any prior asset with the same filename so the upload doesn't 409.
-          export FILE="ps5-${DISTRO}.img.xz"
-          curl -fsS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets" > /tmp/assets.json
-          for AID in $(python3 -c 'import json,os; print(" ".join(str(a["id"]) for a in json.load(open("/tmp/assets.json")) if a.get("name")==os.environ["FILE"]))'); do
-            curl -fsS -X DELETE -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets/$AID" || true
-          done
-          # Upload the new asset.
-          curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" \
-            -F "attachment=@image/output/$FILE" \
-            "$API/releases/$REL_ID/assets?name=$FILE"
+          mkdir -p /data/cache/ps5
+          # Serialise this whole asset replace-then-upload across all
+          # concurrent matrix jobs. Without it, two builds for different
+          # distros that finish at the same time can both PUT against the
+          # 'latest' release and the loser's upload gets clobbered. flock
+          # on a file inside /data is shared between runners as long as
+          # they both have /data on the same physical FS (they each have
+          # their own /data; the lock is per-runner — that's fine because
+          # the actual GitHub-API race is the delete-then-PUT against the
+          # SAME release, and any single runner only handles its own
+          # jobs, so per-runner locking is enough as long as parallel
+          # workflow runs aren't split across runners. For 2-runner
+          # split-run cases we still rely on the API's last-write-wins
+          # being acceptable — re-dispatch fixes any clobbered asset.)
+          (
+            flock -x 9
+            REL_ID=$(curl -sS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/tags/latest" \
+              | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id","") if isinstance(d,dict) else "")' \
+              || true)
+            if [ -z "$REL_ID" ]; then
+              REL_ID=$(curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" -H "Content-Type: application/json" \
+                "$API/releases" \
+                -d '{"tag_name":"latest","name":"PS5 Linux Image (latest)","body":"build in progress","draft":false,"prerelease":false}' \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+            fi
+            export FILE="ps5-${DISTRO}.img.xz"
+            curl -fsS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets" > /tmp/assets.json
+            for AID in $(python3 -c 'import json,os; print(" ".join(str(a["id"]) for a in json.load(open("/tmp/assets.json")) if a.get("name")==os.environ["FILE"]))'); do
+              curl -fsS -X DELETE -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets/$AID" || true
+            done
+            curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" \
+              -F "attachment=@image/output/$FILE" \
+              "$API/releases/$REL_ID/assets?name=$FILE"
+          ) 9>/data/cache/ps5/.release-upload.lock
 
   release:
     needs: build
