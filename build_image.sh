@@ -250,6 +250,28 @@ if [ "$DISTRO" = "all" ]; then
 fi
 
 # --- Step 1: Kernel ---
+# When work/linux is a symlink to a shared persistent cache (as the CI
+# workflow sets up), multiple distro builds running in parallel on the
+# same host all race to clone/patch/mv that shared dir. Wrap the kernel
+# source + build stages in a flock so only one builds at a time; the
+# others wait, then re-check SKIP_KERNEL (now true because kernel-out
+# is populated by the winner) and fall straight through to image-build.
+KERNEL_LOCK="${KERNEL_OUT}.lock"
+mkdir -p "$(dirname "$KERNEL_LOCK")"
+exec 9>"$KERNEL_LOCK"
+flock 9
+
+# Re-evaluate SKIP_KERNEL inside the lock: if another task built the
+# kernel while we were waiting, kernel-out is now populated and we
+# should skip our own build.
+case "$FORMAT" in
+    arch) ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
+    rpm)  ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
+    all)  ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && \
+          ls "$KERNEL_OUT"/*.pkg.tar.zst 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
+    *)    ls "$KERNEL_OUT"/*.deb 1>/dev/null 2>&1 && SKIP_KERNEL=true ;;
+esac
+
 if [ "$SKIP_KERNEL" = true ]; then
     printf "  ✓ %-60s\n" "Kernel packages (cached)"
 else
@@ -383,6 +405,11 @@ if [ "$KERNEL_ONLY" = true ]; then
     echo "Done! Kernel $KVER packages in $KERNEL_OUT/"
     exit 0
 fi
+
+# Release the kernel-build lock: from here on each task does its own
+# image build (chroot, image-builder docker) on per-task paths, so
+# parallel tasks can resume.
+exec 9>&-
 
 # --- Step 2: Build distribution image ---
 run_stage "Build image builder image" \
