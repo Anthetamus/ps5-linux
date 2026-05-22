@@ -256,10 +256,16 @@ fi
 # source + build stages in a flock so only one builds at a time; the
 # others wait, then re-check SKIP_KERNEL (now true because kernel-out
 # is populated by the winner) and fall straight through to image-build.
-KERNEL_LOCK="${KERNEL_OUT}.lock"
+#
+# Lock on the RESOLVED kernel-out path so symlinked per-task workspaces
+# all serialize on the same lock file. Without readlink -f the lock
+# file would live inside each task's workspace and serialize nothing.
+KERNEL_LOCK="$(readlink -f "$KERNEL_OUT" 2>/dev/null || echo "$KERNEL_OUT").lock"
 mkdir -p "$(dirname "$KERNEL_LOCK")"
 exec 9>"$KERNEL_LOCK"
+echo "  acquiring kernel-build lock: $KERNEL_LOCK"
 flock 9
+echo "  acquired"
 
 # Re-evaluate SKIP_KERNEL inside the lock: if another task built the
 # kernel while we were waiting, kernel-out is now populated and we
