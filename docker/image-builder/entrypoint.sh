@@ -3,7 +3,11 @@ set -ex
 
 DISTRO="${DISTRO:-ubuntu2604}"
 # Bazzite ships large (~10 GB rootfs after OCI unpack), bump the default img.
-case "${DISTRO}" in bazzite*) IMG_SIZE="${IMG_SIZE:-20000}" ;; *) IMG_SIZE="${IMG_SIZE:-12000}" ;; esac
+case "${DISTRO}" in
+    bazzite*)  IMG_SIZE="${IMG_SIZE:-20000}" ;;
+    batocera*) IMG_SIZE="${IMG_SIZE:-16000}" ;;
+    *)         IMG_SIZE="${IMG_SIZE:-12000}" ;;
+esac
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
 STAGING="/tmp/build-staging"
 ROOT_LABEL="${DISTRO}"
@@ -73,6 +77,148 @@ EOF
     rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
 
     case "$DISTRO" in
+        batocera*)
+            # Batocera is a Buildroot-based emulation distro. It ships as a
+            # single .img.gz with FAT32 boot + ext4 SHARE partitions; the OS
+            # itself lives in a squashfs file (`/boot/batocera`) on the FAT32.
+            # We unsquash, swap our PS5 kernel + modules in, and let the rest
+            # of the standard image-builder flow pack everything onto ext4.
+            BATOCERA_VER="${BATOCERA_VER:-43}"
+            BATOCERA_BUILD="${BATOCERA_BUILD:-20260430}"
+            BATOCERA_URL="${BATOCERA_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/last/batocera-x86_64-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz}"
+
+            echo "=== Batocera: download $BATOCERA_VER ($BATOCERA_BUILD) ==="
+            mkdir -p /build/cache
+            CACHED=/build/cache/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz
+            if [ ! -s "$CACHED" ]; then
+                wget --tries=3 -O "$CACHED.part" "$BATOCERA_URL"
+                mv "$CACHED.part" "$CACHED"
+            fi
+
+            echo "=== Batocera: decompress + loop ==="
+            BAT_IMG=/build/batocera-src.img
+            gunzip -c "$CACHED" > "$BAT_IMG"
+            BATLOOP=$(losetup -Pf --show "$BAT_IMG")
+            sleep 1
+            # kpartx fallback in case partition kernel events didn't fire
+            [ -e "${BATLOOP}p1" ] || kpartx -av "$BATLOOP"
+            BAT_MNT=$(mktemp -d)
+            BAT_PART1=""
+            for p in "${BATLOOP}p1" "/dev/mapper/$(basename "$BATLOOP")p1"; do
+                [ -e "$p" ] && BAT_PART1="$p" && break
+            done
+            mount -o ro "$BAT_PART1" "$BAT_MNT"
+
+            BAT_SQUASH=""
+            for c in /boot/batocera /batocera /boot/batocera.update; do
+                [ -f "$BAT_MNT$c" ] && BAT_SQUASH="$BAT_MNT$c" && break
+            done
+            if [ -z "$BAT_SQUASH" ]; then
+                echo "ERROR: squashfs not found in batocera image:"
+                find "$BAT_MNT" -maxdepth 3 -type f | head -30
+                exit 1
+            fi
+            echo "=== Batocera: unsquashfs $BAT_SQUASH -> $CHROOT ==="
+            unsquashfs -f -d "$CHROOT" "$BAT_SQUASH"
+
+            umount "$BAT_MNT"
+            rmdir "$BAT_MNT"
+            kpartx -dv "$BATLOOP" 2>/dev/null || true
+            losetup -d "$BATLOOP"
+            rm -f "$BAT_IMG"
+
+            echo "=== Batocera: install linux-ps5 kernel + modules ==="
+            KSTAGE=/tmp/bat-kernel-staging
+            rm -rf "$KSTAGE"; mkdir -p "$KSTAGE"
+            for deb in /kernel-debs/linux-image-*.deb; do
+                [ -f "$deb" ] && dpkg-deb -x "$deb" "$KSTAGE"
+            done
+            KVER=$(ls -1 "$KSTAGE/lib/modules" | head -1)
+            rm -rf "$CHROOT"/lib/modules/*
+            cp -a "$KSTAGE/lib/modules/$KVER" "$CHROOT/lib/modules/"
+            mkdir -p "$CHROOT/boot/efi"
+            cp "$KSTAGE/boot/vmlinuz-$KVER" "$CHROOT/boot/efi/bzImage"
+            # depmod -b runs from outside the chroot — Batocera's busybox
+            # depmod may not be present, and host depmod handles -b cleanly.
+            depmod -a -b "$CHROOT" "$KVER" || true
+            # Stage WLAN firmware loader + module autoload (same files the
+            # debian/fedora paths get from /kernel-debs/staging via .deb).
+            for src in usr/local/sbin etc/modules-load.d etc/systemd/system; do
+                [ -d "$KSTAGE/$src" ] || continue
+                mkdir -p "$CHROOT/$src"
+                cp -an "$KSTAGE/$src/." "$CHROOT/$src/" || true
+            done
+
+            echo "=== Batocera: PS5 modprobe quirks ==="
+            mkdir -p "$CHROOT/etc/modprobe.d"
+            cat > "$CHROOT/etc/modprobe.d/ps5-amdgpu.conf" <<MODPROBE
+options amdgpu dpm=0 gpu_recovery=0
+MODPROBE
+
+            echo "=== Batocera: build initrd via host mkinitramfs ==="
+            # Host (image-builder, ubuntu:24.04) has initramfs-tools. Trick
+            # it into building for our PS5 kernel by symlinking the chroot's
+            # modules into /lib/modules/$KVER, then unlinking after.
+            mkdir -p /lib/modules
+            ln -sfn "$CHROOT/lib/modules/$KVER" "/lib/modules/$KVER"
+            mkinitramfs -k "$KVER" -o "$CHROOT/boot/efi/initrd.img"
+            rm -f "/lib/modules/$KVER"
+            rm -rf "$KSTAGE"
+
+            echo "=== Batocera: fstab + users ==="
+            cat > "$CHROOT/etc/fstab" <<FSTAB
+LABEL=$ROOT_LABEL / ext4 defaults 0 1
+LABEL=$EFI_LABEL  /boot/efi vfat defaults 0 1
+FSTAB
+            # Batocera ships root passwordless. Leave root usable (a lot of
+            # Batocera scripts assume root) but ALSO add a ps5 user so the
+            # release-page convention works.
+            if ! grep -q "^ps5:" "$CHROOT/etc/passwd"; then
+                echo "ps5:x:1000:1000:PS5:/home/ps5:/bin/sh" >> "$CHROOT/etc/passwd"
+                echo "ps5:!::0:99999:7:::"                   >> "$CHROOT/etc/shadow"
+                echo "ps5:x:1000:"                           >> "$CHROOT/etc/group"
+                mkdir -p "$CHROOT/home/ps5"
+                chroot "$CHROOT" /bin/sh -c "chown -R 1000:1000 /home/ps5" 2>/dev/null || true
+            fi
+            # Both root and ps5 get pw 'ps5' — Batocera's chpasswd is busybox.
+            chroot "$CHROOT" /bin/sh -c "printf 'ps5\nps5\n' | passwd ps5 2>/dev/null; printf 'ps5\nps5\n' | passwd root 2>/dev/null" || true
+
+            echo "=== Batocera: grow-rootfs first-boot service ==="
+            mkdir -p "$CHROOT/usr/local/sbin" "$CHROOT/etc/systemd/system"
+            cat > "$CHROOT/usr/local/sbin/grow-rootfs" <<'GROW'
+#!/bin/sh
+set -e
+ROOT=$(findmnt -no SOURCE / || mount | awk '$3=="/"{print $1; exit}')
+DISK=$(lsblk -no PKNAME "$ROOT" 2>/dev/null | head -1)
+PARTNUM=$(echo "$ROOT" | grep -oE '[0-9]+$' || true)
+[ -z "$DISK" ] || [ -z "$PARTNUM" ] && exit 0
+growpart "/dev/$DISK" "$PARTNUM" || true
+resize2fs "$ROOT" || true
+GROW
+            chmod +x "$CHROOT/usr/local/sbin/grow-rootfs"
+            cat > "$CHROOT/etc/systemd/system/grow-rootfs.service" <<SVC
+[Unit]
+Description=Grow rootfs to fill disk (first boot)
+ConditionPathExists=/usr/local/sbin/grow-rootfs
+ConditionFirstBoot=yes
+After=local-fs.target
+Before=basic.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/grow-rootfs
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+SVC
+            # Batocera switched to systemd in v33+. Try systemctl enable;
+            # tolerate buildroot quirks where /etc/systemd/system layout
+            # differs.
+            mkdir -p "$CHROOT/etc/systemd/system/sysinit.target.wants"
+            ln -sf ../grow-rootfs.service \
+                "$CHROOT/etc/systemd/system/sysinit.target.wants/grow-rootfs.service"
+            ;;
         bazzite*)
             # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
             REF="ghcr.io/ublue-os/bazzite:stable"
@@ -287,7 +433,7 @@ fi
 
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
-    ubuntu*|debian*|fedora*|bazzite*)
+    ubuntu*|debian*|fedora*|bazzite*|batocera*)
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;

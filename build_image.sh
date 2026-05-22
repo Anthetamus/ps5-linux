@@ -75,6 +75,13 @@ case "$DISTRO" in
             IMG_SIZE=24000
         fi
         ;;
+    # Batocera unsquashes to ~6GB; 12GB is tight once kernel + initrd +
+    # /userdata defaults are added. Bump to 16GB.
+    batocera*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=16000
+        fi
+        ;;
 esac
 
 if [ -z "$FORMAT" ]; then
