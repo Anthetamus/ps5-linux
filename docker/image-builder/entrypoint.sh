@@ -93,20 +93,16 @@ EOF
             # pre-staged or survive between runs. The mirror rate-limits per-IP
             # to ~250KB/s sustained (4MB/s burst), so re-downloading every run
             # is unacceptably slow.
-            CACHED=""
-            for d in /build/cache/persistent /build/cache; do
-                if [ -s "$d/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz" ]; then
-                    CACHED="$d/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz"
-                    break
-                fi
-            done
-            if [ -z "$CACHED" ]; then
-                CACHED=/build/cache/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz
-                mkdir -p "$(dirname "$CACHED")"
+            # The workflow hard-links /data/cache/ps5/downloads/* into
+            # image/work/cache before the build container starts, so the
+            # image appears as /build/cache/batocera-*.img.gz inside.
+            CACHED="/build/cache/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz"
+            if [ ! -s "$CACHED" ]; then
+                echo ">> No cached image, downloading (this will be slow due to mirror rate-limiting)"
                 wget --tries=3 -O "$CACHED.part" "$BATOCERA_URL"
                 mv "$CACHED.part" "$CACHED"
             fi
-            echo ">> Using $CACHED"
+            echo ">> Using $CACHED ($(du -h "$CACHED" | cut -f1))"
 
             echo "=== Batocera: decompress + loop ==="
             BAT_IMG=/build/batocera-src.img
@@ -234,7 +230,15 @@ SVC
             ;;
         bazzite*)
             # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
-            REF="ghcr.io/ublue-os/bazzite:stable"
+            # DISTRO=bazzite      -> ghcr.io/ublue-os/bazzite:stable
+            # DISTRO=bazzite-deck -> ghcr.io/ublue-os/bazzite-deck:stable
+            # Anything else after `bazzite-` is treated as the same uBlue
+            # image-name pattern (bazzite-gnome, bazzite-nvidia, ...).
+            case "$DISTRO" in
+                bazzite)      REF="ghcr.io/ublue-os/bazzite:stable" ;;
+                bazzite-*)    REF="ghcr.io/ublue-os/${DISTRO}:stable" ;;
+                *)            REF="ghcr.io/ublue-os/bazzite:stable" ;;
+            esac
             echo "=== Bazzite: skopeo copy $REF ==="
             OCI=$(mktemp -d)
             skopeo copy --override-os linux --override-arch amd64 \

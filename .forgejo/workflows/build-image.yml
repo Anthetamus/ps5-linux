@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, alpine, fedora-gnome, fedora-kde, bazzite, batocera]
+        options: [all, ubuntu2604, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, alpine, fedora-gnome, fedora-kde, bazzite, bazzite-deck, batocera]
   workflow_call:
     inputs:
       distro:
@@ -35,7 +35,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","alpine","fedora-gnome","fedora-kde","bazzite","batocera"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","alpine","fedora-gnome","fedora-kde","bazzite","bazzite-deck","batocera"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -67,11 +67,21 @@ jobs:
         with:
           path: image
 
-      - name: Wire persistent download cache (batocera image, etc)
+      - name: Stage pre-fetched downloads into workspace cache
         run: |
           set -eux
           mkdir -p /data/cache/ps5/downloads image/work/cache
-          ln -sfn /data/cache/ps5/downloads image/work/cache/persistent
+          # Hard-link the cached files into the per-run workspace. Symlinks
+          # would point at /data/... which isn't mounted inside the build
+          # container, leaving the symlink dangling. Hard links share the
+          # same inode and work transparently across the bind mount. Same
+          # filesystem (the host LV) is required for ln; that's already the
+          # case since the workspace lives under /data/.cache/act.
+          for f in /data/cache/ps5/downloads/*; do
+            [ -f "$f" ] || continue
+            ln -f "$f" "image/work/cache/$(basename "$f")"
+          done
+          ls -la image/work/cache/ || true
 
       - name: Wire persistent kernel cache (bust on PATCHES_REF or MWIFIEX_REF change)
         run: |
@@ -211,7 +221,7 @@ jobs:
                  '',
                  '## Images',
                  '| Image | Download |','|-------|----------|']
-          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('debian13-proxmox','Debian 13 + Proxmox VE 9'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine'),('fedora-gnome','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)'),('batocera','Batocera (retro emulation)')]:
+          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('debian13-proxmox','Debian 13 + Proxmox VE 9'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine'),('fedora-gnome','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)'),('bazzite-deck','Bazzite-Deck (Steam-Deck UI variant)'),('batocera','Batocera (retro emulation)')]:
               f=f'ps5-{distro}.img.xz'
               lines.append(f'| {label} | [{f}]({rel}/{f}) |')
           lines += ['','**SHA256 checksums:**','```',sums.strip(),'```']
