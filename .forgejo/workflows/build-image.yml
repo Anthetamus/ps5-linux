@@ -67,6 +67,12 @@ jobs:
         with:
           path: image
 
+      - name: Wire persistent download cache (batocera image, etc)
+        run: |
+          set -eux
+          mkdir -p /data/cache/ps5/downloads image/work/cache
+          ln -sfn /data/cache/ps5/downloads image/work/cache/persistent
+
       - name: Wire persistent kernel cache (bust on PATCHES_REF or MWIFIEX_REF change)
         run: |
           set -eux

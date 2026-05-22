@@ -87,13 +87,26 @@ EOF
             BATOCERA_BUILD="${BATOCERA_BUILD:-20260430}"
             BATOCERA_URL="${BATOCERA_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/last/batocera-x86_64-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz}"
 
-            echo "=== Batocera: download $BATOCERA_VER ($BATOCERA_BUILD) ==="
-            mkdir -p /build/cache
-            CACHED=/build/cache/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz
-            if [ ! -s "$CACHED" ]; then
+            echo "=== Batocera: locate / download $BATOCERA_VER ($BATOCERA_BUILD) ==="
+            # /build/cache is per-run temp. The workflow symlinks /build/cache/
+            # persistent -> /data/cache/ps5/downloads, so the .img.gz can be
+            # pre-staged or survive between runs. The mirror rate-limits per-IP
+            # to ~250KB/s sustained (4MB/s burst), so re-downloading every run
+            # is unacceptably slow.
+            CACHED=""
+            for d in /build/cache/persistent /build/cache; do
+                if [ -s "$d/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz" ]; then
+                    CACHED="$d/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz"
+                    break
+                fi
+            done
+            if [ -z "$CACHED" ]; then
+                CACHED=/build/cache/batocera-${BATOCERA_VER}-${BATOCERA_BUILD}.img.gz
+                mkdir -p "$(dirname "$CACHED")"
                 wget --tries=3 -O "$CACHED.part" "$BATOCERA_URL"
                 mv "$CACHED.part" "$CACHED"
             fi
+            echo ">> Using $CACHED"
 
             echo "=== Batocera: decompress + loop ==="
             BAT_IMG=/build/batocera-src.img
