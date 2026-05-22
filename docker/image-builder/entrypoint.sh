@@ -530,6 +530,38 @@ case "$DISTRO" in
         ;;
 esac
 
+# --- ps5-linux-tools: fan + boost services ---
+# Without /dev/icc fan control the PS5 runs at default (loud) fan curve;
+# without /dev/mp1 boost the CPU/GPU stay at base clocks. ps5-linux-tools
+# ships ps5_control (the binary that pokes both devices) and two systemd
+# oneshots that bring them on at boot. Same recipe as the upstream README's
+# install.sh — we just bake it into every image instead of asking the user
+# to run it manually after first boot.
+PS5TOOLS_REF="${PS5TOOLS_REF:-main}"
+echo "=== ps5-linux-tools: build + install fan/boost services ==="
+PS5TOOLS_DIR=/tmp/ps5-linux-tools
+rm -rf "$PS5TOOLS_DIR"
+git clone --depth 1 --branch "$PS5TOOLS_REF" \
+    https://github.com/ps5-linux/ps5-linux-tools "$PS5TOOLS_DIR"
+( cd "$PS5TOOLS_DIR" && make ps5_control m2_init )
+
+install -Dm755 "$PS5TOOLS_DIR/ps5_control" "$CHROOT/usr/local/sbin/ps5_control"
+install -Dm755 "$PS5TOOLS_DIR/m2_init"     "$CHROOT/usr/local/sbin/m2_init"
+
+if [ "$DISTRO" != "alpine" ]; then
+    # systemd distros: drop the service files and enable them.
+    install -Dm644 "$PS5TOOLS_DIR/systemd/ps5fan.service" \
+        "$CHROOT/etc/systemd/system/ps5fan.service"
+    install -Dm644 "$PS5TOOLS_DIR/systemd/ps5boost.service" \
+        "$CHROOT/etc/systemd/system/ps5boost.service"
+    mkdir -p "$CHROOT/etc/systemd/system/multi-user.target.wants"
+    ln -sf ../ps5fan.service \
+        "$CHROOT/etc/systemd/system/multi-user.target.wants/ps5fan.service"
+    ln -sf ../ps5boost.service \
+        "$CHROOT/etc/systemd/system/multi-user.target.wants/ps5boost.service"
+fi
+rm -rf "$PS5TOOLS_DIR"
+
 # --- Alpine kernel gap: no kernel installed via image.yaml ---
 # Extract kernel from .deb, copy modules + bzImage, then chroot to run mkinitfs
 if [ "$DISTRO" = "alpine" ]; then
