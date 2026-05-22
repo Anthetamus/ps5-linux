@@ -72,21 +72,18 @@ packages:
     - chrony
     - postfix         # Proxmox depends on a working MTA
 
-    # KVM / LXC base — Proxmox layers on top of these
-    - qemu-system-x86
-    - qemu-utils
-    - qemu-kvm
-    - libvirt-clients
+    # KVM / LXC base — Proxmox ships its own patched qemu (pve-qemu-kvm)
+    # which conflicts with Debian's qemu-system-x86. Don't pull Debian's
+    # qemu, let pve-qemu-kvm be the provider when proxmox-ve drags it in.
     - lvm2
     - thin-provisioning-tools
     - open-iscsi
-    - libnvpair3linux
 
     # Proxmox VE 9 user-facing pieces. NOT the meta-package `proxmox-ve`
     # because that hard-depends on proxmox-default-kernel — we use linux-ps5
     # instead. Pin in post-unpack blocks the kernel packages.
     - pve-manager
-    - qemu-server
+    - qemu-server          # pulls pve-qemu-kvm
     - pve-cluster
     - pve-container
     - pve-edk2-firmware
