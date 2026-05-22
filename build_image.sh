@@ -281,7 +281,6 @@ esac
 if [ "$SKIP_KERNEL" = true ]; then
     printf "  ✓ %-60s\n" "Kernel packages (cached)"
 else
-    set -x  # DEBUG: trace the kernel source setup
     if [ ! -d "$KERNEL_SRC/.git" ]; then
         REPO_URL="$PATCHES_REPO"
         [ -n "$PATCHES_TOKEN" ] && REPO_URL="${PATCHES_REPO/https:\/\//https:\/\/${PATCHES_TOKEN}@}"
@@ -329,26 +328,14 @@ else
         # The docker-alpine-rm guard at the top of this block only fires
         # when the dir exists at script start; this catches the case where
         # the dir reappears mid-run (cache mount races, prior task leftover).
-        echo "DEBUG: pre-mv state of LINUX_DEFAULT_DIR=$LINUX_DEFAULT_DIR"
-        ls -la "$(dirname "$LINUX_DEFAULT_DIR")"
-        echo "DEBUG: LINUX_TMP_DIR=$LINUX_TMP_DIR has:"
-        ls -la "$LINUX_TMP_DIR" | head -5
         [ -e "$LINUX_DEFAULT_DIR" ] && rm -rf "$LINUX_DEFAULT_DIR"
         mv "$LINUX_TMP_DIR" "$LINUX_DEFAULT_DIR"
-        echo "DEBUG: post-mv state of $LINUX_DEFAULT_DIR:"
-        ls -la "$LINUX_DEFAULT_DIR" | head -5
-        echo "DEBUG: ls -la work:"
-        ls -la "$(dirname "$LINUX_DEFAULT_DIR")"
         KERNEL_SRC="$LINUX_DEFAULT_DIR"
     else
         printf "  ✓ %-60s\n" "Kernel source (cached)"
     fi
 
-    set +x  # DEBUG: end trace
-    echo "DEBUG: pre-cd KERNEL_SRC=$KERNEL_SRC"
     KERNEL_SRC="$(cd "$KERNEL_SRC" && pwd)"
-    echo "DEBUG: post-cd KERNEL_SRC=$KERNEL_SRC ls -la:"
-    ls -la "$KERNEL_SRC" | head -5
 
     rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst
 
@@ -356,16 +343,6 @@ else
         docker build --platform "$KERNEL_BUILDER_PLATFORM" -t ps5-kernel-builder \
             -f "$SCRIPT_DIR/docker/kernel-builder/Dockerfile" "$SCRIPT_DIR"
 
-    echo "DEBUG: pre-compile state of KERNEL_SRC=$KERNEL_SRC"
-    ls -la "$KERNEL_SRC" | head -10
-    echo "DEBUG: kernel-builder will run with:"
-    echo "  -v $KERNEL_SRC:/src"
-    echo "  -v $KERNEL_OUT:/out"
-    echo "  -v $CCACHE_DIR:/ccache"
-    echo "DEBUG: spotcheck — does Makefile exist?"
-    ls -la "$KERNEL_SRC/Makefile" 2>&1 | head
-    echo "DEBUG: what container sees at /src:"
-    docker run --rm -v "$KERNEL_SRC":/src ps5-kernel-builder ls -la /src 2>&1 | head -10
     run_stage "Compile kernel" \
         docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
             -e MWIFIEX_REF="$MWIFIEX_REF" \
