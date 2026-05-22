@@ -420,6 +420,70 @@ User=ps5
 Session=$SESSION
 SDDM
 
+                # Gamescope-session fallback. Field report: bazzite-deck boots
+                # to a black screen on PS5 because gamescope can't grab the
+                # display (PSP/TA + Salina HDMI bridge weirdness — workaround
+                # is `steamos-session-select plasma` from a VT). Automate it:
+                # first-boot oneshot waits 60s for a gamescope process; if
+                # nothing shows up, flip the session to plasma and bounce
+                # SDDM. Only arm this when the chosen session is gamescope-
+                # flavoured. After first boot the user owns session choice
+                # via the standard steamos-session-select tool + the desktop
+                # shortcut we drop below.
+                case "$SESSION" in gamescope*|steam-wayland*)
+                    mkdir -p /usr/local/sbin /etc/systemd/system/graphical.target.wants
+                    cat > /usr/local/sbin/ps5-gamescope-recovery <<'POKE'
+#!/bin/bash
+# Wait up to 60s for gamescope to actually grab a display. If it doesn't,
+# the user is staring at a black screen — fall back to plasma and bounce
+# the display manager so they get a usable login session.
+for _ in $(seq 1 60); do
+    sleep 1
+    pgrep -x gamescope >/dev/null 2>&1 && exit 0
+done
+logger -t ps5-gamescope-recovery "gamescope didn't start within 60s, switching to plasma"
+runuser -u ps5 -- steamos-session-select plasma 2>/dev/null \
+    || sed -i 's/^Session=.*/Session=plasma/' /etc/sddm.conf.d/autologin.conf
+systemctl restart sddm
+POKE
+                    chmod +x /usr/local/sbin/ps5-gamescope-recovery
+                    cat > /etc/systemd/system/ps5-gamescope-recovery.service <<RECOV
+[Unit]
+Description=Fall back to plasma if gamescope can't grab a display (first boot)
+After=graphical.target
+ConditionFirstBoot=yes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-gamescope-recovery
+RemainAfterExit=no
+
+[Install]
+WantedBy=graphical.target
+RECOV
+                    ln -sf ../ps5-gamescope-recovery.service \
+                        /etc/systemd/system/graphical.target.wants/ps5-gamescope-recovery.service
+
+                    # Desktop shortcut so the user can opt back into gamescope
+                    # after a recovery (or after switching to plasma manually).
+                    mkdir -p /home/ps5/Desktop
+                    cat > /home/ps5/Desktop/Switch-to-Gamescope.desktop <<DESK
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Switch to Gamescope (Big Picture)
+Comment=Switch the autologin session back to gamescope / Steam Deck UI
+Exec=bash -c 'steamos-session-select gamescope && systemctl restart sddm'
+Icon=steam
+Terminal=false
+Categories=System;
+DESK
+                    chmod +x /home/ps5/Desktop/Switch-to-Gamescope.desktop
+                    chown -R ps5:ps5 /home/ps5/Desktop 2>/dev/null || \
+                        chown -R 1000:1000 /home/ps5/Desktop
+                    ;;
+                esac
+
                 # DTM TA race workaround. amdgpu's display-topology TA
                 # (Trusted Application) loads async via PSP; if DRM probes
                 # connectors before that finishes, you get
