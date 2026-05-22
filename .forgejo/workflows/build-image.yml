@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, arch, cachyos, alpine, fedora-gnome, fedora-kde, bazzite]
+        options: [all, ubuntu2604, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, alpine, fedora-gnome, fedora-kde, bazzite]
   workflow_call:
     inputs:
       distro:
@@ -35,7 +35,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","arch","cachyos","alpine","fedora-gnome","fedora-kde","bazzite"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","alpine","fedora-gnome","fedora-kde","bazzite"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -205,7 +205,7 @@ jobs:
                  '',
                  '## Images',
                  '| Image | Download |','|-------|----------|']
-          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine'),('fedora-gnome','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)')]:
+          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('debian13-proxmox','Debian 13 + Proxmox VE 9'),('arch','Arch'),('cachyos','CachyOS'),('alpine','Alpine'),('fedora-gnome','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)')]:
               f=f'ps5-{distro}.img.xz'
               lines.append(f'| {label} | [{f}]({rel}/{f}) |')
           lines += ['','**SHA256 checksums:**','```',sums.strip(),'```']
