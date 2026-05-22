@@ -1,11 +1,38 @@
 # PS5 Linux Image Builder
 
-Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), and Alpine, individually or as a multi-distro image with kexec switching.
+> **Fork notice.** This is a downstream fork of the upstream **[ps5-linux/ps5-linux-image](https://github.com/ps5-linux/ps5-linux-image)** project. It adds ten more distros (Debian 13 variants incl. Proxmox VE 9, Fedora 44 GNOME/KDE, Bazzite, Bazzite-Deck, and Batocera), a hardened CI pipeline that publishes pre-built images to the [release page](https://git.etawen.dev/mia/ps5-linux-image/releases/tag/latest), and PS5-specific quirks (DTM TA udev workaround, mwifiex firmware staging, `amdgpu dpm=0`). The kernel build path and the PS5 patches reference are unchanged from upstream.
+
+Builds bootable Linux USB images for PlayStation 5 using Docker containers. Each image ships the linux-ps5 kernel with the patches from [`mia/ps5-linux-patches`](https://git.etawen.dev/mia/ps5-linux-patches), the mwifiex driver for the IW620 WLAN/BT module, and per-distro PS5 setup (kexec loader entry, growpart on first boot, NetworkManager, etc).
+
+## Prebuilt images
+
+Pre-built `.img.xz` files for every distro below are published on the [`latest`](https://git.etawen.dev/mia/ps5-linux-image/releases/tag/latest) release. Just `xz -d` and `dd` — no local build required.
+
+## Distributions
+
+| Distro | Default session | Pkg fmt | Notes |
+|---|---|---|---|
+| Ubuntu 26.04 (Resolute) | GNOME | `.deb` | systemd, NetworkManager |
+| Debian 13 (Trixie) — XFCE | XFCE | `.deb` | lightweight desktop |
+| Debian 13 (Trixie) — GNOME | GNOME | `.deb` | full GNOME stack |
+| Debian 13 (Trixie) — KDE | KDE Plasma | `.deb` | full KDE stack |
+| Debian 13 (Trixie) — Server | tty1 autologin | `.deb` | headless, no DE |
+| Debian 13 + Proxmox VE 9 | Proxmox web UI | `.deb` | KVM/LXC, pinned Debian kernel replaced with linux-ps5 |
+| Arch | Sway | `.pkg.tar.zst` | rolling |
+| CachyOS | Gamescope + Steam Big Picture | `.pkg.tar.zst` | Arch + `[cachyos]` repo |
+| Alpine 3.21 | OpenRC tty | extracted `.deb` | musl, minimal |
+| Fedora 44 — GNOME | GNOME | `.rpm` | latest Fedora |
+| Fedora 44 — KDE Plasma | KDE Plasma | `.rpm` | Mesa 26.1 (PS5 GFX1013 fix) when available |
+| **Bazzite** | KDE Plasma | OCI atomic | ublue-os gaming-focused Fedora |
+| **Bazzite-Deck** | gamescope-session-plus | OCI atomic | Steam-Deck UI variant of Bazzite |
+| **Batocera** | EmulationStation | squashfs | retro emulation distro (RetroArch + dozens of emulators) |
+
+Default credentials on every image: user `ps5` / password `ps5` (sudo enabled, root locked). CachyOS uses `steam` / `steam`. Bazzite-Deck boots straight into the gamescope session.
 
 ## Prerequisites
 
 - Docker (with permission to run `--privileged` containers) — install as per your distro's instructions
-- ~30GB free disk space
+- ~30 GB free disk space (more for `--distro all` or Bazzite/Bazzite-Deck/Batocera: ~50 GB)
 
 Once Docker is installed, add your user to the docker group and apply it without logging out:
 
@@ -17,17 +44,17 @@ newgrp docker
 ## Quick Start
 
 ```bash
-# Build a single Ubuntu 26.04 image
-./build_image.sh --distro ubuntu2604
+# Build a single distro
+./build_image.sh --distro ubuntu2604           # default
+./build_image.sh --distro debian13-kde
+./build_image.sh --distro debian13-proxmox
+./build_image.sh --distro fedora-kde
+./build_image.sh --distro bazzite
+./build_image.sh --distro bazzite-deck
+./build_image.sh --distro batocera
+./build_image.sh --distro cachyos              # gamescope + Steam Big Picture
 
-OR
-
-# Build CachyOS (Arch-based, Gamescope + Steam Big Picture)
-./build_image.sh --distro cachyos
-
-OR
-
-# Build a multi-distro image (ubuntu2604 + arch + alpine + cachyos)
+# Multi-distro image (legacy: ubuntu2604 + debian13 + arch + alpine + cachyos)
 ./build_image.sh --distro all
 ```
 
@@ -36,84 +63,54 @@ The script auto-clones the kernel source, applies PS5 patches, compiles, and bui
 ## Flash to USB
 
 ```bash
-sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
+xz -dk output/ps5-debian13-kde.img.xz                                # if you grabbed from releases
+sudo dd if=output/ps5-debian13-kde.img of=/dev/sdX bs=4M status=progress
 ```
+
+After flashing, on first boot the rootfs auto-expands to fill the USB drive (see the `grow-rootfs` service in each distro's directory).
 
 ## Options
 
 | Flag | Description | Default |
-|------|-------------|---------|
-| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `alpine`, or `all` | `ubuntu2604` |
-| `--kernel` | Path to kernel source directory | auto-clone `v6.19.10` |
-| `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
+|---|---|---|
+| `--distro` | Any value from the [distros table](#distributions), or `all` | `ubuntu2604` |
+| `--kernel` | Path to kernel source directory | auto-clone |
+| `--img-size` | Disk image size in MB | `12000`; bumped automatically for Bazzite (24 GB), Bazzite-Deck (24 GB), Batocera (16 GB), `all` (32 GB) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
 | `--kernel-only` | Build and package the kernel only, then exit | off |
-| `--patches-ref` | Branch, tag, or commit SHA for patches | `v1.0` |
+| `--patches-ref` | Branch, tag, or commit SHA for `ps5-linux-patches` | pinned in `build_image.sh` |
 
 ## Caching
 
 The build automatically skips stages that have already completed:
 
 - **Kernel source** — reused if `work/linux/` exists
-- **Kernel packages** — reused if `.deb`/`.pkg.tar.zst` files exist in `linux-bin/`
+- **Kernel packages** — reused if `linux-ps5*.deb` / `.rpm` / `.pkg.tar.zst` files exist in `linux-bin/`
 - **Root filesystem** — reused if chroot directories are populated
+- **Batocera upstream image** — `.img.gz` cached at `work/cache/` (Batocera's mirror rate-limits per-IP to ~250 KB/s, so re-downloading every run is painful)
 
 Use `--clean` to wipe everything and rebuild from scratch. The build will also suggest `--clean` if a stage fails.
 
-## Build Output
+## PS5-specific quirks baked into every image
 
-```
-PS5 Linux Image Builder
-=======================
-  Distro:       all
-                (ubuntu2604 arch alpine cachyos)
-  Image size:   32000MB
-  Kernel src:   /path/to/work/linux
-
-Stages:
-  1. Kernel            cached
-  2. Root filesystem   build
-  3. Disk image        build
-
-Logs: /path/to/build.log
-
-  ✓ Kernel packages (cached)
-  ✓ Build image builder image
-  ⠹ Building arch rootfs
-```
-
-All verbose output goes to `build.log`. The terminal shows a spinner with live progress.
-
-## Distributions
-
-| Distro | Desktop | Kernel format | Init |
-|--------|---------|---------------|------|
-| Ubuntu 26.04 (Resolute) | GNOME | `.deb` | systemd |
-| Arch | Sway | `.pkg.tar.zst` | systemd |
-| CachyOS | Gamescope + Steam Big Picture (Arch + `[cachyos]` repo, no v3 migration in image build) | `.pkg.tar.zst` | systemd |
-| Alpine (3.21) | GNOME | extracted from `.deb` | OpenRC |
+- `amdgpu` modprobe options: `dpm=0 gpu_recovery=0` (Oberon GPU stays dark with stock DPM)
+- DTM TA race workaround: udev rule re-triggers DRM connector detection after `amdgpu` binds, so the screen doesn't stay dark until you manually VT-toggle
+- mwifiex IW620 driver auto-loads + firmware blob is staged from the FAT32 EFI partition on first boot
+- `linux-ps5` kernel ships in the rootfs at `/lib/modules/<kver>` with depmod already run
 
 ## Multi-distro Image
 
-`--distro all` builds a 32GB image with 5 partitions (one EFI boot partition plus four root filesystems):
+`--distro all` builds a 32 GB image with multiple partitions (one EFI boot partition plus per-distro root filesystems). The boot partition contains kexec scripts to switch between distros at runtime. Ubuntu 26.04 is the default boot target.
 
-| Partition | Type | Label | Content |
-|-----------|------|-------|---------|
-| p1 | FAT32 | boot | Shared kernel, per-distro initrds, kexec scripts |
-| p2 | ext4 | ubuntu2604 | Ubuntu 26.04 rootfs |
-| p3 | ext4 | arch | Arch rootfs |
-| p4 | ext4 | alpine | Alpine rootfs |
-| p5 | ext4 | cachyos | CachyOS rootfs |
-
-The boot partition contains kexec scripts to switch between distros at runtime. Ubuntu 26.04 is the default boot target.
+(Only the `MULTI_DISTROS` list in `build_image.sh` is packed into the multi image — currently `ubuntu2604 debian13 arch alpine cachyos`. The newer distros — fedora, bazzite, batocera — are single-distro only.)
 
 ## Building the Kernel Standalone
 
 Use `--kernel-only` to compile the PS5 kernel and produce installable packages without building a full disk image.
 
 ```bash
-./build_image.sh --kernel-only                                # .deb (default)
-./build_image.sh --kernel-only --distro all                   # .deb + .pkg.tar.zst
+./build_image.sh --kernel-only                                # .deb
+./build_image.sh --kernel-only --distro all                   # .deb + .rpm + .pkg.tar.zst
 ./build_image.sh --kernel-only --patches-ref main             # fetch from specific branch/tag
 ./build_image.sh --kernel-only --clean                        # wipe and rebuild from scratch
 ```
@@ -121,7 +118,9 @@ Use `--kernel-only` to compile the PS5 kernel and produce installable packages w
 Output packages are written to `linux-bin/`. Install on a running PS5 Linux system:
 
 ```bash
-sudo dpkg -i linux-bin/linux-ps5_*.deb
+sudo dpkg  -i linux-bin/linux-ps5_*.deb            # debian / ubuntu
+sudo rpm   -Uvh --replacefiles linux-bin/linux-ps5-*.rpm   # fedora / bazzite
+sudo pacman -U linux-bin/linux-ps5-*.pkg.tar.zst    # arch / cachyos
 ```
 
 ## Directory Layout
@@ -130,22 +129,32 @@ sudo dpkg -i linux-bin/linux-ps5_*.deb
 build_image.sh                  # Image builder (also supports --kernel-only)
 docker/
   kernel-builder/               # Kernel compilation container
-  kernel-builder-arch/         # Repackages .deb kernel as .pkg.tar.zst
+  kernel-builder-arch/          # Repackages .deb kernel as .pkg.tar.zst
+  kernel-builder-rpm/           # Repackages .deb kernel as .rpm
   image-builder/
-    Dockerfile                  # Image building container (distrobuilder)
+    Dockerfile                  # Image building container (distrobuilder + skopeo + umoci)
     entrypoint.sh               # Single-distro build logic
     entrypoint-multi.sh         # Multi-distro build logic
 distros/
-  ubuntu2604/                   # Ubuntu 26.04 (Resolute)
+  ubuntu2604/                   # Ubuntu 26.04
+  debian13-{xfce,server,gnome,kde,proxmox}/
   arch/                         # Arch Linux
-  cachyos/                      # CachyOS repos + Gamescope/Steam
+  cachyos/                      # CachyOS + Gamescope/Steam
   alpine/                       # Alpine 3.21
-  shared/                       # Kernel postinst hooks (single + multi)
+  fedora-{gnome,kde}/           # Fedora 44
+  bazzite/                      # OCI extract path (covers bazzite + bazzite-deck)
+  shared/                       # Kernel postinst hooks
 boot/
   cmdline.txt                   # Kernel cmdline template (__DISTRO__ placeholder)
   vram.txt                      # VRAM allocation
+  kexec.sh                      # Loader stub
   kexec-{ubuntu2604,arch,alpine,cachyos}.sh
 work/                           # Build artifacts (auto-created)
 linux-bin/                      # Compiled kernel packages
-output/                         # Final .img files
+output/                         # Final .img / .img.xz files
+.forgejo/workflows/             # CI for the automated nightly release
 ```
+
+## Credits
+
+Upstream: [ps5-linux/ps5-linux-image](https://github.com/ps5-linux/ps5-linux-image), [ps5-linux/ps5-linux-patches](https://github.com/ps5-linux/ps5-linux-patches), [ps5-linux/ps5-linux-loader](https://github.com/ps5-linux/ps5-linux-loader), [ps5-linux/ps5-linux-mwifiex](https://github.com/ps5-linux/ps5-linux-mwifiex). The Mesa GFX1013 widening that makes the PS5 Oberon (CYAN_SKILLFISH revision) work in userspace was originally written by theflow.
