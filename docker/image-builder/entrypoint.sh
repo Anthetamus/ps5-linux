@@ -139,10 +139,20 @@ EOF
             echo "=== Batocera: install linux-ps5 kernel + modules ==="
             KSTAGE=/tmp/bat-kernel-staging
             rm -rf "$KSTAGE"; mkdir -p "$KSTAGE"
-            for deb in /kernel-debs/linux-image-*.deb; do
+            # The kernel-builder ships a single combined linux-ps5_*.deb
+            # (Provides: linux-image-X) — there is no linux-image-*.deb on
+            # disk, so target the actual filename pattern.
+            shopt -s nullglob
+            for deb in /kernel-debs/linux-ps5*.deb /kernel-debs/linux-image-*.deb; do
                 [ -f "$deb" ] && dpkg-deb -x "$deb" "$KSTAGE"
             done
-            KVER=$(ls -1 "$KSTAGE/lib/modules" | head -1)
+            shopt -u nullglob
+            KVER=$(ls -1 "$KSTAGE/lib/modules" 2>/dev/null | head -1)
+            if [ -z "$KVER" ]; then
+                echo "ERROR: no kernel modules found after dpkg-deb -x of /kernel-debs/*.deb"
+                ls -la /kernel-debs/
+                exit 1
+            fi
             rm -rf "$CHROOT"/lib/modules/*
             cp -a "$KSTAGE/lib/modules/$KVER" "$CHROOT/lib/modules/"
             mkdir -p "$CHROOT/boot/efi"
@@ -464,10 +474,16 @@ if [ "$DISTRO" = "alpine" ]; then
     ALPINE_STAGING="/tmp/alpine-kernel-staging"
     rm -rf "$ALPINE_STAGING"
     mkdir -p "$ALPINE_STAGING"
-    for deb in /kernel-debs/linux-image-*.deb; do
+    # Kernel-builder ships linux-ps5_*.deb (a single combined deb that
+    # provides linux-image-*). The old linux-image-*.deb pattern matches
+    # nothing on disk; keep both so an upstream naming shift doesn't
+    # silently break alpine again.
+    shopt -s nullglob
+    for deb in /kernel-debs/linux-ps5*.deb /kernel-debs/linux-image-*.deb; do
         [ -f "$deb" ] || continue
         dpkg-deb -x "$deb" "$ALPINE_STAGING"
     done
+    shopt -u nullglob
 
     KVER=$(ls -1 "$ALPINE_STAGING/lib/modules" 2>/dev/null | head -1)
 
