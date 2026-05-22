@@ -356,6 +356,16 @@ else
         docker build --platform "$KERNEL_BUILDER_PLATFORM" -t ps5-kernel-builder \
             -f "$SCRIPT_DIR/docker/kernel-builder/Dockerfile" "$SCRIPT_DIR"
 
+    echo "DEBUG: pre-compile state of KERNEL_SRC=$KERNEL_SRC"
+    ls -la "$KERNEL_SRC" | head -10
+    echo "DEBUG: kernel-builder will run with:"
+    echo "  -v $KERNEL_SRC:/src"
+    echo "  -v $KERNEL_OUT:/out"
+    echo "  -v $CCACHE_DIR:/ccache"
+    echo "DEBUG: spotcheck — does Makefile exist?"
+    ls -la "$KERNEL_SRC/Makefile" 2>&1 | head
+    echo "DEBUG: what container sees at /src:"
+    docker run --rm -v "$KERNEL_SRC":/src ps5-kernel-builder ls -la /src 2>&1 | head -10
     run_stage "Compile kernel" \
         docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
             -e MWIFIEX_REF="$MWIFIEX_REF" \
