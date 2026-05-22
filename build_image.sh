@@ -291,6 +291,16 @@ else
         run_stage "Copy kernel config" \
             cp "$PATCHES_DIR/.config" "$LINUX_TMP_DIR/.config"
 
+        # Make sure the destination is gone before we rename into it. If
+        # $LINUX_DEFAULT_DIR still exists (stale state from a previous run,
+        # interrupted task, or a runner that reused this workspace), a
+        # plain `mv linux.tmp linux` moves the source INTO linux/, and if
+        # linux/linux.tmp also exists from an earlier partial run it errors
+        # with "cannot overwrite linux/linux.tmp: Directory not empty".
+        # The docker-alpine-rm guard at the top of this block only fires
+        # when the dir exists at script start; this catches the case where
+        # the dir reappears mid-run (cache mount races, prior task leftover).
+        [ -e "$LINUX_DEFAULT_DIR" ] && rm -rf "$LINUX_DEFAULT_DIR"
         mv "$LINUX_TMP_DIR" "$LINUX_DEFAULT_DIR"
         KERNEL_SRC="$LINUX_DEFAULT_DIR"
     else
