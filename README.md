@@ -1,6 +1,6 @@
 # PS5 Linux Image Builder
 
-> **Fork notice.** This is a downstream fork of the upstream **[ps5-linux/ps5-linux-image](https://github.com/ps5-linux/ps5-linux-image)** project. It adds ten more distros (Debian 13 variants incl. Proxmox VE 9, Fedora 44 GNOME/KDE, Bazzite, Bazzite-Deck, and Batocera), a hardened CI pipeline that publishes pre-built images to the [release page](https://git.etawen.dev/mia/ps5-linux-image/releases/tag/latest), and PS5-specific quirks (DTM TA udev workaround, mwifiex firmware staging, `amdgpu dpm=0`). The kernel build path and the PS5 patches reference are unchanged from upstream.
+Fork of [ps5-linux/ps5-linux-image](https://github.com/ps5-linux/ps5-linux-image) with more distros and [prebuilt images](https://git.etawen.dev/mia/ps5-linux-image/releases/tag/latest).
 
 Builds bootable Linux USB images for PlayStation 5 using Docker containers. Each image ships the linux-ps5 kernel with the patches from [`mia/ps5-linux-patches`](https://git.etawen.dev/mia/ps5-linux-patches), the mwifiex driver for the IW620 WLAN/BT module, and per-distro PS5 setup (kexec loader entry, growpart on first boot, NetworkManager, etc).
 
