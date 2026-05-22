@@ -15,6 +15,16 @@ on:
         type: string
         default: 'ubuntu2604'
 
+# Serialize release uploads. Without this, two concurrent "all" runs (or
+# a manual single-distro dispatch racing an in-flight all run) will both
+# DELETE-then-PUT against the same 'latest' release, and the loser's
+# upload gets clobbered — that's how ps5-bazzite.img.xz disappeared from
+# the release after a recent overlap. cancel-in-progress=false means
+# the second dispatch queues behind the first instead of cancelling it.
+concurrency:
+  group: release-latest
+  cancel-in-progress: false
+
 jobs:
   matrix:
     runs-on: self-hosted
