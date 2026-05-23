@@ -141,5 +141,10 @@ actions:
     update-initramfs -c -k "$KVER"
     /etc/kernel/postinst.d/zz-update-boot "$KVER"
 
+    # Hold linux-ps5 — `apt upgrade` would otherwise replace our patched
+    # kernel with an upstream Ubuntu kernel and break boot. Binaries +
+    # source tree are pre-staged by entrypoint.sh at /opt/ps5-linux-tools.
+    apt-mark hold linux-ps5 || true
+
 mappings:
   architecture_map: debian

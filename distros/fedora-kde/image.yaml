@@ -189,6 +189,10 @@ actions:
         printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\n' > /etc/systemd/zram-generator.conf
     fi
 
+    # versionlock the PS5 kernel so `dnf upgrade` doesn't replace it.
+    dnf install -y python3-dnf-plugin-versionlock
+    dnf versionlock add linux-ps5 || true
+
 files:
 - name: hostname
   path: /etc/hostname

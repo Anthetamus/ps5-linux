@@ -171,5 +171,10 @@ actions:
 
     mkdir -p /boot/efi
 
+    # Alpine has no native `hold` mechanism. The kernel for Alpine is
+    # installed directly by entrypoint.sh (not via apk), so it's not in
+    # the apk world list and `apk upgrade` cannot replace it. Nothing
+    # to pin here.
+
 mappings:
   architecture_map: alpinelinux

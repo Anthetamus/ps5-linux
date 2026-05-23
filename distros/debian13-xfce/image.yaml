@@ -234,5 +234,8 @@ actions:
     # Serial console
     systemctl enable serial-getty@ttyTitania0.service
 
+    # Hold linux-ps5 against upstream replacement.
+    apt-mark hold linux-ps5 || true
+
 mappings:
   architecture_map: debian

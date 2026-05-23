@@ -335,5 +335,10 @@ actions:
     mkdir -p /boot/efi
     /etc/kernel/postinst.d/zz-update-boot
 
+    # IgnorePkg keeps `pacman -Syu` from replacing our patched linux-ps5
+    # kernel with the CachyOS stock kernel.
+    sed -i '/^IgnorePkg/d' /etc/pacman.conf
+    echo 'IgnorePkg = linux-ps5' >> /etc/pacman.conf
+
 mappings:
   architecture_map: archlinux
