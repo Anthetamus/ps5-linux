@@ -34,7 +34,7 @@ EOF
     cp /repo/distros/${DISTRO}/nm-dns.conf       "$STAGING/" 2>/dev/null || true
 
     case "$DISTRO" in
-        ubuntu*|debian*)
+        ubuntu*|debian*|mint*)
             cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
@@ -237,6 +237,110 @@ SVC
             mkdir -p "$CHROOT/etc/systemd/system/sysinit.target.wants"
             ln -sf ../grow-rootfs.service \
                 "$CHROOT/etc/systemd/system/sysinit.target.wants/grow-rootfs.service"
+            ;;
+        chimeraos*)
+            # ChimeraOS ships its rootfs as a BTRFS send-stream wrapped in a
+            # .img.tar.xz tarball. Pipeline:
+            #   1. tar -xJ the tarball to scratch → produces chimeraos-<ver>.img
+            #      (a btrfs-stream — NOT a squashfs despite the .img suffix)
+            #   2. Create a loop-mounted scratch btrfs filesystem
+            #   3. `btrfs receive` the stream → creates a subvolume
+            #   4. Copy the subvolume contents to $CHROOT
+            #   5. Replace linux-chimeraos with linux-ps5 via pacman -U
+            CHIMERA_VER="${CHIMERA_VER:-49-1_cabd8c9}"
+            CHIMERA_URL="${CHIMERA_URL:-https://github.com/ChimeraOS/chimeraos/releases/download/${CHIMERA_VER}/chimeraos-${CHIMERA_VER}.img.tar.xz}"
+
+            echo "=== ChimeraOS: locate / download $CHIMERA_VER ==="
+            CACHED="/build/cache/chimeraos-${CHIMERA_VER}.img.tar.xz"
+            if [ ! -s "$CACHED" ]; then
+                echo ">> No cached image, downloading (~1.9 GB)"
+                wget --tries=3 -O "$CACHED.part" "$CHIMERA_URL"
+                mv "$CACHED.part" "$CACHED"
+            fi
+            echo ">> Using $CACHED ($(du -h "$CACHED" | cut -f1))"
+
+            echo "=== ChimeraOS: extract tarball -> scratch ==="
+            CHIMERA_SCRATCH=/build/chimera-scratch
+            rm -rf "$CHIMERA_SCRATCH"
+            mkdir -p "$CHIMERA_SCRATCH"
+            tar -xJf "$CACHED" -C "$CHIMERA_SCRATCH"
+            CHIMERA_STREAM=$(ls "$CHIMERA_SCRATCH"/*.img 2>/dev/null | head -1)
+            if [ -z "$CHIMERA_STREAM" ]; then
+                echo "ERROR: no .img file inside ChimeraOS tarball:"
+                ls -la "$CHIMERA_SCRATCH"
+                exit 1
+            fi
+            echo ">> btrfs-stream file: $CHIMERA_STREAM ($(du -h "$CHIMERA_STREAM" | cut -f1))"
+
+            echo "=== ChimeraOS: btrfs receive into scratch FS ==="
+            # ChimeraOS uncompresses to ~6.7 GB; allocate 10 GB scratch FS for headroom.
+            BTRFS_IMG=/build/chimera-btrfs.img
+            BTRFS_MNT=/build/chimera-btrfs
+            rm -f "$BTRFS_IMG"
+            truncate -s 10G "$BTRFS_IMG"
+            mkfs.btrfs -q "$BTRFS_IMG"
+            mkdir -p "$BTRFS_MNT"
+            mount -o loop "$BTRFS_IMG" "$BTRFS_MNT"
+            btrfs receive "$BTRFS_MNT" < "$CHIMERA_STREAM"
+            rm -rf "$CHIMERA_SCRATCH"
+
+            RECV_SUBVOL=$(ls "$BTRFS_MNT" | head -1)
+            if [ -z "$RECV_SUBVOL" ] || [ ! -d "$BTRFS_MNT/$RECV_SUBVOL/usr" ]; then
+                echo "ERROR: btrfs receive did not produce a rootfs subvolume:"
+                ls -la "$BTRFS_MNT"
+                umount "$BTRFS_MNT" || true
+                exit 1
+            fi
+            echo ">> received subvolume: $RECV_SUBVOL"
+
+            echo "=== ChimeraOS: copy subvolume contents -> $CHROOT ==="
+            # cp -a preserves perms / symlinks / timestamps; Arch rootfs doesn't
+            # rely on xattrs at boot, so we skip rsync's -HAX overhead.
+            rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
+            cp -a "$BTRFS_MNT/$RECV_SUBVOL/." "$CHROOT/"
+            umount "$BTRFS_MNT"
+            rm -f "$BTRFS_IMG"
+            rmdir "$BTRFS_MNT" 2>/dev/null || true
+
+            echo "=== ChimeraOS: install linux-ps5 kernel + modules ==="
+            # ChimeraOS uses a `/usr`-only composefs-style layout: at runtime,
+            # `/var` is an overlay over `/usr/var`. At build/chroot time, the
+            # top-level `/var` is empty, the pacman DB sits at /usr/var/lib/pacman.
+            # Standard chroot prep: bind /var, /proc, /sys, /dev and provide
+            # /etc/mtab so pacman's disk-space check can read mount info.
+            mount --bind "$CHROOT/usr/var" "$CHROOT/var"
+            mount -t proc proc "$CHROOT/proc"
+            mount -t sysfs sys "$CHROOT/sys"
+            mount --bind /dev "$CHROOT/dev"
+            cleanup_chimera_mounts() {
+                umount "$CHROOT/dev"  2>/dev/null || true
+                umount "$CHROOT/sys"  2>/dev/null || true
+                umount "$CHROOT/proc" 2>/dev/null || true
+                umount "$CHROOT/var"  2>/dev/null || true
+            }
+            trap cleanup_chimera_mounts RETURN ERR EXIT
+
+            # /etc/mtab — pacman reads this to determine free space per FS.
+            # Replace any existing entry (file or symlink) with a link to the
+            # kernel-maintained mounts list.
+            rm -f "$CHROOT/etc/mtab"
+            ln -sf /proc/self/mounts "$CHROOT/etc/mtab"
+
+            mkdir -p "$CHROOT/opt/pkgs"
+            cp /kernel-debs/*.pkg.tar.zst "$CHROOT/opt/pkgs/"
+            chroot "$CHROOT" bash -c '
+                set -eux
+                rm -f /var/lib/pacman/db.lck
+                pacman -U --noconfirm --ask 4 --overwrite "*" /opt/pkgs/*.pkg.tar.zst
+                rm -rf /opt/pkgs
+                KVER=$(ls -1t /lib/modules | grep -v "^extramodules" | head -1)
+                mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
+            '
+
+            cleanup_chimera_mounts
+            trap - RETURN ERR EXIT
+
+            mkdir -p "$CHROOT/boot/efi"
             ;;
         bazzite*)
             # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
@@ -524,7 +628,7 @@ fi
 
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
-    ubuntu*|debian*|fedora*|bazzite*|batocera*)
+    ubuntu*|debian*|mint*|fedora*|bazzite*|batocera*|chimeraos*)
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;
@@ -547,6 +651,13 @@ git clone --depth 1 --branch "$PS5TOOLS_REF" \
 
 install -Dm755 "$PS5TOOLS_DIR/ps5_control" "$CHROOT/usr/local/sbin/ps5_control"
 install -Dm755 "$PS5TOOLS_DIR/m2_init"     "$CHROOT/usr/local/sbin/m2_init"
+
+# Preserve the source tree at /opt/ps5-linux-tools so README-style commands
+# (cd ps5-linux-tools && ./m2_install.sh, etc.) work on first boot without
+# needing internet to re-clone.
+mkdir -p "$CHROOT/opt"
+cp -a "$PS5TOOLS_DIR" "$CHROOT/opt/ps5-linux-tools"
+rm -rf "$CHROOT/opt/ps5-linux-tools/.git"
 
 if [ "$DISTRO" != "alpine" ]; then
     # systemd distros: drop the service files and enable them.

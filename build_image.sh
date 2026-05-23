@@ -82,14 +82,21 @@ case "$DISTRO" in
             IMG_SIZE=16000
         fi
         ;;
+    # ChimeraOS rootfs is ~5 GB after extract; 12GB is okay but tight once
+    # Steam + game cache + frzr snapshots accumulate. Bump to 16 GB.
+    chimeraos*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=16000
+        fi
+        ;;
 esac
 
 if [ -z "$FORMAT" ]; then
     case "$DISTRO" in
-        arch|cachyos)        FORMAT="arch" ;;
-        fedora*|bazzite*)    FORMAT="rpm" ;;
-        all)                 FORMAT="all" ;;
-        *)                   FORMAT="deb" ;;
+        arch|cachyos|chimeraos*) FORMAT="arch" ;;
+        fedora*|bazzite*)        FORMAT="rpm" ;;
+        all)                     FORMAT="all" ;;
+        *)                       FORMAT="deb" ;;
     esac
 fi
 

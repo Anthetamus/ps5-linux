@@ -117,6 +117,31 @@ EOF
 ln -sf ../ps5-stage-firmware.service \
     /out/staging/etc/systemd/system/sysinit.target.wants/ps5-stage-firmware.service
 
+# ─── PS5 Salina GBE driver ───────────────────────────────────────────────────
+#
+# Out-of-tree driver for the PS5's onboard gigabit ethernet (104d:9104).
+# Softdep on `spcie` (which IS in the linux-ps5 patch set).
+SALINA_GBE_REF="${SALINA_GBE_REF:-main}"
+echo "=== Build PS5 Salina GBE (rmuxnet/ps5-salina-gbe @ $SALINA_GBE_REF) ==="
+rm -rf /tmp/salina-gbe
+git clone --quiet --depth 1 --branch "$SALINA_GBE_REF" \
+    https://github.com/rmuxnet/ps5-salina-gbe.git /tmp/salina-gbe
+make -C /tmp/salina-gbe KERNELDIR=/src ARCH=x86 -j"$(nproc)"
+
+mkdir -p "/out/staging/lib/modules/$KVER/extra/ps5-gbe"
+cp /tmp/salina-gbe/ps5_gbe.ko "/out/staging/lib/modules/$KVER/extra/ps5-gbe/"
+
+# modprobe config — matches what upstream install.sh writes.
+mkdir -p /out/staging/etc/modprobe.d
+cat > /out/staging/etc/modprobe.d/ps5-gbe.conf <<'MODPROBE'
+# PS5 Salina GBE
+softdep ps5_gbe pre: spcie
+MODPROBE
+
+# Record the ref we built against (release-body rendering).
+GBE_HEAD=$(git -C /tmp/salina-gbe rev-parse --short HEAD)
+echo "$GBE_HEAD" > /out/staging/salina-gbe-ref
+
 # Record the refs we built against (used in release-body rendering later).
 echo "$MWIFIEX_REF" > /out/staging/mwifiex-ref
 echo "$NXP_REF"     > /out/staging/nxp-ref
