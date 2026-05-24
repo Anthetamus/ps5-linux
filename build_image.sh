@@ -351,7 +351,17 @@ else
 
     KERNEL_SRC="$(cd "$KERNEL_SRC" && pwd)"
 
-    rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst
+    # Wipe ONLY the format we're about to rebuild. Wiping every format
+    # (which the older code did) races against parallel matrix jobs on the
+    # same runner: e.g. an arch build would delete .deb artifacts that a
+    # concurrent ubuntu image-build is mid-way through using, surfacing as
+    # `cp /kernel-debs/*.deb: No such file or directory` in the loser.
+    case "$FORMAT" in
+        deb)  rm -f "$KERNEL_OUT"/*.deb ;;
+        rpm)  rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.rpm ;;
+        arch) rm -f "$KERNEL_OUT"/*.pkg.tar.zst ;;
+        all)  rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.rpm "$KERNEL_OUT"/*.pkg.tar.zst ;;
+    esac
 
     run_stage "Build kernel builder image" \
         docker build --platform "$KERNEL_BUILDER_PLATFORM" -t ps5-kernel-builder \
