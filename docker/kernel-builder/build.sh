@@ -126,7 +126,11 @@ echo "=== Build PS5 Salina GBE (rmuxnet/ps5-salina-gbe @ $SALINA_GBE_REF) ==="
 rm -rf /tmp/salina-gbe
 git clone --quiet --depth 1 --branch "$SALINA_GBE_REF" \
     https://github.com/rmuxnet/ps5-salina-gbe.git /tmp/salina-gbe
-make -C /tmp/salina-gbe KERNELDIR=/src ARCH=x86 -j"$(nproc)"
+# Their Makefile uses M=$(PWD); we must invoke from inside the source dir so
+# PWD evaluates to /tmp/salina-gbe (not /src — which is where build.sh started
+# and would otherwise inherit the shell's PWD env, making make rebuild the
+# kernel itself instead of the out-of-tree module).
+( cd /tmp/salina-gbe && make KERNELDIR=/src ARCH=x86 -j"$(nproc)" )
 
 mkdir -p "/out/staging/lib/modules/$KVER/extra/ps5-gbe"
 cp /tmp/salina-gbe/ps5_gbe.ko "/out/staging/lib/modules/$KVER/extra/ps5-gbe/"
