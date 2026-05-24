@@ -335,12 +335,17 @@ SVC
                 rm -rf /opt/pkgs
                 KVER=$(ls -1t /lib/modules | grep -v "^extramodules" | head -1)
                 mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
+                # Stage kernel + initrd to /boot/efi/ — pacman does not run
+                # the Debian-style /etc/kernel/postinst.d/zz-update-boot hook,
+                # so without this the FAT32 boot partition ships empty and
+                # ps5-linux-loader cannot find bzImage.
+                mkdir -p /boot/efi
+                cp "/boot/vmlinuz-$KVER"    /boot/efi/bzImage
+                cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
             '
 
             cleanup_chimera_mounts
             trap - RETURN ERR EXIT
-
-            mkdir -p "$CHROOT/boot/efi"
             ;;
         bazzite*)
             # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
