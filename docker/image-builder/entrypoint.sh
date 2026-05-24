@@ -335,14 +335,29 @@ SVC
                 rm -rf /opt/pkgs
                 KVER=$(ls -1t /lib/modules | grep -v "^extramodules" | head -1)
                 mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
-                # Stage kernel + initrd to /boot/efi/ — pacman does not run
-                # the Debian-style /etc/kernel/postinst.d/zz-update-boot hook,
-                # so without this the FAT32 boot partition ships empty and
-                # ps5-linux-loader cannot find bzImage.
                 mkdir -p /boot/efi
                 cp "/boot/vmlinuz-$KVER"    /boot/efi/bzImage
                 cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
             '
+
+            # Replace ChimeraOS' frzr-aware /etc/fstab with a flat ext4 layout
+            # matching the rest of our distros. Upstream fstab tried to mount
+            # LABEL=frzr_root (a btrfs subvol) at /var /home /frzr_root plus
+            # an overlay on /etc — none of which exist after we copy-extracted
+            # to a plain ext4 partition, so systemd dropped to emergency mode
+            # which fails to start because the root account is locked.
+            cat > "$CHROOT/etc/fstab" <<EOF
+LABEL=$ROOT_LABEL / ext4 defaults 0 1
+LABEL=$EFI_LABEL  /boot/efi vfat defaults 0 1
+EOF
+
+            # Disable the frzr/chimera auto-update services — they would try
+            # to btrfs-receive a new image from upstream over our ext4 root.
+            chroot "$CHROOT" systemctl disable --quiet \
+                frzr-autoupdate.timer frzr-autoupdate.service \
+                2>/dev/null || true
+            # Strip ostree config — we're not on ostree.
+            rm -f "$CHROOT/etc/ostree-mkinitcpio.conf"
 
             cleanup_chimera_mounts
             trap - RETURN ERR EXIT
