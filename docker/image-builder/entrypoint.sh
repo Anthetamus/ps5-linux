@@ -675,9 +675,14 @@ install -Dm755 "$PS5TOOLS_DIR/m2_init"     "$CHROOT/usr/local/sbin/m2_init"
 # Preserve the source tree at /opt/ps5-linux-tools so README-style commands
 # (cd ps5-linux-tools && ./m2_install.sh, etc.) work on first boot without
 # needing internet to re-clone.
-mkdir -p "$CHROOT/opt"
-cp -a "$PS5TOOLS_DIR" "$CHROOT/opt/ps5-linux-tools"
-rm -rf "$CHROOT/opt/ps5-linux-tools/.git"
+#
+# On Fedora-atomic / bazzite, /opt is a symlink to var/opt. mkdir -p on the
+# symlink dangles because var/opt doesn't exist in the chroot yet, so resolve
+# the symlink first and mkdir the actual target.
+OPT_DEST=$(readlink -f "$CHROOT/opt" 2>/dev/null || echo "$CHROOT/opt")
+mkdir -p "$OPT_DEST"
+cp -a "$PS5TOOLS_DIR" "$OPT_DEST/ps5-linux-tools"
+rm -rf "$OPT_DEST/ps5-linux-tools/.git"
 
 if [ "$DISTRO" != "alpine" ]; then
     # systemd distros: drop the service files and enable them.
