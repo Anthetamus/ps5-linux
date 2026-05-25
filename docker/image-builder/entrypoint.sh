@@ -130,6 +130,21 @@ EOF
             echo "=== Batocera: unsquashfs $BAT_SQUASH -> $CHROOT ==="
             unsquashfs -f -d "$CHROOT" "$BAT_SQUASH"
 
+            # Batocera ships a SECOND squashfs (boot/rufomaculata) with the
+            # libretro cores, mame binary, and other emulator assets. At
+            # runtime it's mounted as a second overlayfs layer on top of the
+            # main batocera squashfs. We don't do overlay — just unsquash
+            # rufomaculata on top of $CHROOT so the unified view is realised
+            # on the ext4 root. Without this, /usr/lib/libretro/ doesn't
+            # exist and EmulationStation reports "no games start" because
+            # retroarch fails to load any core.
+            if [ -f "$BAT_MNT/boot/rufomaculata" ]; then
+                echo "=== Batocera: unsquashfs boot/rufomaculata (libretro + mame) -> $CHROOT ==="
+                unsquashfs -f -d "$CHROOT" "$BAT_MNT/boot/rufomaculata"
+            else
+                echo "WARN: boot/rufomaculata not found — emulator cores will be missing"
+            fi
+
             umount "$BAT_MNT"
             rmdir "$BAT_MNT"
             kpartx -dv "$BATLOOP" 2>/dev/null || true
@@ -169,9 +184,16 @@ EOF
             done
 
             echo "=== Batocera: PS5 modprobe quirks ==="
-            mkdir -p "$CHROOT/etc/modprobe.d"
+            mkdir -p "$CHROOT/etc/modprobe.d" "$CHROOT/etc/modules-load.d"
             cat > "$CHROOT/etc/modprobe.d/ps5-amdgpu.conf" <<MODPROBE
 options amdgpu dpm=0 gpu_recovery=0
+MODPROBE
+            # uinput is needed by Batocera's hotkeygen (for virtual keyboard
+            # events when launching games). It's not autoloaded by default on
+            # PS5, so hotkeygen crashes with 'UInputError: /dev/uinput does
+            # not exist'. Force-load on boot.
+            cat > "$CHROOT/etc/modules-load.d/uinput.conf" <<MODPROBE
+uinput
 MODPROBE
 
             echo "=== Batocera: build initrd via host mkinitramfs ==="
