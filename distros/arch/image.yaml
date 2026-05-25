@@ -66,6 +66,8 @@ packages:
     - kmod
     - e2fsprogs
     - parted
+    - gptfdisk
+    - cloud-guest-utils
     - polkit
     - dbus
     - seatd
