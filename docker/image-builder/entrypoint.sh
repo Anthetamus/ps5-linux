@@ -49,8 +49,8 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
             ;;
-        arch)
-            cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
+        arch|chimeraos*)
+            cp /repo/distros/arch/grow-rootfs              "$STAGING/"
             cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
             cp /repo/distros/arch/first-boot-setup         "$STAGING/"
             mkdir -p "$STAGING/pkgs"
@@ -237,130 +237,6 @@ SVC
             mkdir -p "$CHROOT/etc/systemd/system/sysinit.target.wants"
             ln -sf ../grow-rootfs.service \
                 "$CHROOT/etc/systemd/system/sysinit.target.wants/grow-rootfs.service"
-            ;;
-        chimeraos*)
-            # ChimeraOS ships its rootfs as a BTRFS send-stream wrapped in a
-            # .img.tar.xz tarball. Pipeline:
-            #   1. tar -xJ the tarball to scratch → produces chimeraos-<ver>.img
-            #      (a btrfs-stream — NOT a squashfs despite the .img suffix)
-            #   2. Create a loop-mounted scratch btrfs filesystem
-            #   3. `btrfs receive` the stream → creates a subvolume
-            #   4. Copy the subvolume contents to $CHROOT
-            #   5. Replace linux-chimeraos with linux-ps5 via pacman -U
-            CHIMERA_VER="${CHIMERA_VER:-49-1_cabd8c9}"
-            CHIMERA_URL="${CHIMERA_URL:-https://github.com/ChimeraOS/chimeraos/releases/download/${CHIMERA_VER}/chimeraos-${CHIMERA_VER}.img.tar.xz}"
-
-            echo "=== ChimeraOS: locate / download $CHIMERA_VER ==="
-            CACHED="/build/cache/chimeraos-${CHIMERA_VER}.img.tar.xz"
-            if [ ! -s "$CACHED" ]; then
-                echo ">> No cached image, downloading (~1.9 GB)"
-                wget --tries=3 -O "$CACHED.part" "$CHIMERA_URL"
-                mv "$CACHED.part" "$CACHED"
-            fi
-            echo ">> Using $CACHED ($(du -h "$CACHED" | cut -f1))"
-
-            echo "=== ChimeraOS: extract tarball -> scratch ==="
-            CHIMERA_SCRATCH=/build/chimera-scratch
-            rm -rf "$CHIMERA_SCRATCH"
-            mkdir -p "$CHIMERA_SCRATCH"
-            tar -xJf "$CACHED" -C "$CHIMERA_SCRATCH"
-            CHIMERA_STREAM=$(ls "$CHIMERA_SCRATCH"/*.img 2>/dev/null | head -1)
-            if [ -z "$CHIMERA_STREAM" ]; then
-                echo "ERROR: no .img file inside ChimeraOS tarball:"
-                ls -la "$CHIMERA_SCRATCH"
-                exit 1
-            fi
-            echo ">> btrfs-stream file: $CHIMERA_STREAM ($(du -h "$CHIMERA_STREAM" | cut -f1))"
-
-            echo "=== ChimeraOS: btrfs receive into scratch FS ==="
-            # ChimeraOS uncompresses to ~6.7 GB; allocate 10 GB scratch FS for headroom.
-            BTRFS_IMG=/build/chimera-btrfs.img
-            BTRFS_MNT=/build/chimera-btrfs
-            rm -f "$BTRFS_IMG"
-            truncate -s 10G "$BTRFS_IMG"
-            mkfs.btrfs -q "$BTRFS_IMG"
-            mkdir -p "$BTRFS_MNT"
-            mount -o loop "$BTRFS_IMG" "$BTRFS_MNT"
-            btrfs receive "$BTRFS_MNT" < "$CHIMERA_STREAM"
-            rm -rf "$CHIMERA_SCRATCH"
-
-            RECV_SUBVOL=$(ls "$BTRFS_MNT" | head -1)
-            if [ -z "$RECV_SUBVOL" ] || [ ! -d "$BTRFS_MNT/$RECV_SUBVOL/usr" ]; then
-                echo "ERROR: btrfs receive did not produce a rootfs subvolume:"
-                ls -la "$BTRFS_MNT"
-                umount "$BTRFS_MNT" || true
-                exit 1
-            fi
-            echo ">> received subvolume: $RECV_SUBVOL"
-
-            echo "=== ChimeraOS: copy subvolume contents -> $CHROOT ==="
-            # cp -a preserves perms / symlinks / timestamps; Arch rootfs doesn't
-            # rely on xattrs at boot, so we skip rsync's -HAX overhead.
-            rm -rf "$CHROOT"/* "$CHROOT"/.[!.]* 2>/dev/null || true
-            cp -a "$BTRFS_MNT/$RECV_SUBVOL/." "$CHROOT/"
-            umount "$BTRFS_MNT"
-            rm -f "$BTRFS_IMG"
-            rmdir "$BTRFS_MNT" 2>/dev/null || true
-
-            echo "=== ChimeraOS: install linux-ps5 kernel + modules ==="
-            # ChimeraOS uses a `/usr`-only composefs-style layout: at runtime,
-            # `/var` is an overlay over `/usr/var`. At build/chroot time, the
-            # top-level `/var` is empty, the pacman DB sits at /usr/var/lib/pacman.
-            # Standard chroot prep: bind /var, /proc, /sys, /dev and provide
-            # /etc/mtab so pacman's disk-space check can read mount info.
-            mount --bind "$CHROOT/usr/var" "$CHROOT/var"
-            mount -t proc proc "$CHROOT/proc"
-            mount -t sysfs sys "$CHROOT/sys"
-            mount --bind /dev "$CHROOT/dev"
-            cleanup_chimera_mounts() {
-                umount "$CHROOT/dev"  2>/dev/null || true
-                umount "$CHROOT/sys"  2>/dev/null || true
-                umount "$CHROOT/proc" 2>/dev/null || true
-                umount "$CHROOT/var"  2>/dev/null || true
-            }
-            trap cleanup_chimera_mounts RETURN ERR EXIT
-
-            # /etc/mtab — pacman reads this to determine free space per FS.
-            # Replace any existing entry (file or symlink) with a link to the
-            # kernel-maintained mounts list.
-            rm -f "$CHROOT/etc/mtab"
-            ln -sf /proc/self/mounts "$CHROOT/etc/mtab"
-
-            mkdir -p "$CHROOT/opt/pkgs"
-            cp /kernel-debs/*.pkg.tar.zst "$CHROOT/opt/pkgs/"
-            chroot "$CHROOT" bash -c '
-                set -eux
-                rm -f /var/lib/pacman/db.lck
-                pacman -U --noconfirm --ask 4 --overwrite "*" /opt/pkgs/*.pkg.tar.zst
-                rm -rf /opt/pkgs
-                KVER=$(ls -1t /lib/modules | grep -v "^extramodules" | head -1)
-                mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
-                mkdir -p /boot/efi
-                cp "/boot/vmlinuz-$KVER"    /boot/efi/bzImage
-                cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
-            '
-
-            # Replace ChimeraOS' frzr-aware /etc/fstab with a flat ext4 layout
-            # matching the rest of our distros. Upstream fstab tried to mount
-            # LABEL=frzr_root (a btrfs subvol) at /var /home /frzr_root plus
-            # an overlay on /etc — none of which exist after we copy-extracted
-            # to a plain ext4 partition, so systemd dropped to emergency mode
-            # which fails to start because the root account is locked.
-            cat > "$CHROOT/etc/fstab" <<EOF
-LABEL=$ROOT_LABEL / ext4 defaults 0 1
-LABEL=$EFI_LABEL  /boot/efi vfat defaults 0 1
-EOF
-
-            # Disable the frzr/chimera auto-update services — they would try
-            # to btrfs-receive a new image from upstream over our ext4 root.
-            chroot "$CHROOT" systemctl disable --quiet \
-                frzr-autoupdate.timer frzr-autoupdate.service \
-                2>/dev/null || true
-            # Strip ostree config — we're not on ostree.
-            rm -f "$CHROOT/etc/ostree-mkinitcpio.conf"
-
-            cleanup_chimera_mounts
-            trap - RETURN ERR EXIT
             ;;
         bazzite*)
             # Bazzite is an OCI atomic image; bypass distrobuilder entirely.

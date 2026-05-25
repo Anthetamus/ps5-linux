@@ -82,8 +82,9 @@ case "$DISTRO" in
             IMG_SIZE=16000
         fi
         ;;
-    # ChimeraOS rootfs is ~5 GB after extract; 12GB is okay but tight once
-    # Steam + game cache + frzr snapshots accumulate. Bump to 16 GB.
+    # ChimeraOS-style gaming image: Arch base + gamescope + Steam + lib32
+    # stack. Steam is ~2 GB and dual 32/64-bit Mesa/Vulkan adds another ~1 GB.
+    # Bump from 12 -> 16 GB so there's headroom for a game.
     chimeraos*)
         if [ "$IMG_SIZE" = "12000" ]; then
             IMG_SIZE=16000
