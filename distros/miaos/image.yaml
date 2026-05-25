@@ -218,11 +218,11 @@ actions:
     ExecStart=-/usr/bin/agetty --autologin gamer --noclear %I $TERM
     EOF
 
-    # Override /etc/os-release so the system identifies as MiaOS instead
-    # of "Arch Linux" in motd, login banner, neofetch, etc. We're still
-    # Arch underneath — keep ID_LIKE=arch for shell scripts that detect
-    # distro via /etc/os-release.
-    cat > /etc/os-release <<'EOF'
+    # Override the OS identity so the system shows as MiaOS instead of
+    # "Arch Linux" in motd, login banner, neofetch, etc. On Arch
+    # /etc/os-release is a symlink to /usr/lib/os-release — write through
+    # to the canonical target. Keep ID_LIKE=arch for distro-detect scripts.
+    cat > /usr/lib/os-release <<'EOF'
     NAME="MiaOS"
     PRETTY_NAME="MiaOS"
     ID=miaos
@@ -232,8 +232,6 @@ actions:
     SUPPORT_URL="https://discord.gg/v3zHCRfHE"
     LOGO=archlinux-logo
     EOF
-    # Some tools also read /usr/lib/os-release; mirror.
-    cp /etc/os-release /usr/lib/os-release
     echo "MiaOS" > /etc/hostname
 
     # Mode-switch convention: /etc/ps5-mode holds either "gaming" or
