@@ -240,6 +240,44 @@ INITMODS
             rm -f "/lib/modules/$KVER"
             rm -rf "$KSTAGE"
 
+            echo "=== Batocera: patch configgen to bind HOTKEY combos on gamepad ==="
+            # Upstream Batocera's libretroControllers.py only sets
+            # input_enable_hotkey_btn — the hotkey "enable" button — and never
+            # binds input_exit_emulator_btn / input_menu_toggle_btn /
+            # input_save_state_btn / input_load_state_btn. The keyboard-side
+            # bindings (escape = exit, f1 = menu) work fine but on a DualSense
+            # there's no way out of a game without sshing in and pkill'ing
+            # retroarch. Patch the function to also bind start/select/L1/R1.
+            PYFILE="$CHROOT/usr/lib/python3.12/site-packages/configgen/generators/libretro/libretroControllers.py"
+            if [ -f "$PYFILE" ]; then
+                python3 - "$PYFILE" <<'PYPATCH'
+import sys
+p = sys.argv[1]
+src = open(p).read()
+old = "        retroconfig.save('input_enable_hotkey_btn', controllers[0].inputs['hotkey'].id)"
+extra = '''
+        # PS5: map HOTKEY combos to gamepad — upstream sets only the
+        # enable button, leaving exit-emulator unbound on gamepad. Without
+        # this, gamepad users can't exit a retroarch game without sshing
+        # in and pkill'ing retroarch.
+        for batocera_key, retroarch_key in [
+            ('start', 'input_exit_emulator_btn'),
+            ('select', 'input_menu_toggle_btn'),
+            ('pageup', 'input_load_state_btn'),
+            ('pagedown', 'input_save_state_btn'),
+        ]:
+            if batocera_key in controllers[0].inputs:
+                retroconfig.save(retroarch_key, controllers[0].inputs[batocera_key].id)'''
+if old in src and extra not in src:
+    open(p, 'w').write(src.replace(old, old + extra))
+    print('  patched libretroControllers.py')
+else:
+    print('  skipped (line not found or already patched)')
+PYPATCH
+            else
+                echo "  WARN: $PYFILE missing — configgen patch skipped"
+            fi
+
             echo "=== Batocera: fstab + users ==="
             cat > "$CHROOT/etc/fstab" <<FSTAB
 LABEL=$ROOT_LABEL / ext4 defaults 0 1
