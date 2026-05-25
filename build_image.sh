@@ -82,9 +82,9 @@ case "$DISTRO" in
             IMG_SIZE=16000
         fi
         ;;
-    # ChimeraOS-style gaming image: Arch base + gamescope + Steam + lib32
-    # stack. Steam is ~2 GB and dual 32/64-bit Mesa/Vulkan adds another ~1 GB.
-    # Bump from 12 -> 16 GB so there's headroom for a game.
+    # Gaming image: Arch base + gamescope + Steam + lib32 stack. Steam is
+    # ~2 GB and dual 32/64-bit Mesa/Vulkan adds another ~1 GB. Bump from
+    # 12 -> 16 GB so there's headroom for a game.
     arch-gamescope*)
         if [ "$IMG_SIZE" = "12000" ]; then
             IMG_SIZE=16000

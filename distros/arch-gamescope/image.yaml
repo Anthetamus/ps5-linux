@@ -1,7 +1,7 @@
 image:
   name: ps5-arch-gamescope
   distribution: archlinux
-  description: Arch + gamescope + Steam Big Picture (ChimeraOS-style gaming session)
+  description: Arch + gamescope + Steam Big Picture autostart
   architecture: x86_64
 
 source:
@@ -178,16 +178,14 @@ actions:
     ln -sf /etc/systemd/system/grow-rootfs.service \
       /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
 
-    # gamer/gamer user, ChimeraOS convention. Groups: wheel (sudo), seat (seatd),
-    # input/video/render (gamescope + controller access without inputplumber).
+    # gamer/gamer user. Groups: wheel (sudo), seat (seatd), input/video/render
+    # (gamescope + direct controller access — no inputplumber daemon, which
+    # grabs /dev/input and breaks gamescope on PS5).
     useradd -m -G wheel,seat,input,video,render -s /bin/bash gamer
     echo "gamer:gamer" | chpasswd
     echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
 
     # Autologin gamer on tty1, then launch gamescope+steam from .bash_profile.
-    # This is the exact path that works on the live PS5 — no lightdm/gamescope-
-    # session-plus (those depend on the AUR-only chimera-session machinery
-    # which we don't ship).
     mkdir -p /etc/systemd/system/getty@tty1.service.d
     cat > /etc/systemd/system/getty@tty1.service.d/override.conf <<'EOF'
     [Service]
