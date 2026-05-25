@@ -49,7 +49,7 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
             ;;
-        arch|chimeraos*)
+        arch|arch-gamescope*)
             cp /repo/distros/arch/grow-rootfs              "$STAGING/"
             cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
             cp /repo/distros/arch/first-boot-setup         "$STAGING/"
@@ -524,7 +524,7 @@ fi
 
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
-    ubuntu*|debian*|mint*|fedora*|bazzite*|batocera*|chimeraos*)
+    ubuntu*|debian*|mint*|fedora*|bazzite*|batocera*|arch-gamescope*)
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;

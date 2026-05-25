@@ -1,5 +1,5 @@
 image:
-  name: ps5-chimeraos
+  name: ps5-arch-gamescope
   distribution: archlinux
   description: Arch + gamescope + Steam Big Picture (ChimeraOS-style gaming session)
   architecture: x86_64
