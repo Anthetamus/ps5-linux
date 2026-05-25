@@ -279,10 +279,69 @@ PYPATCH
             fi
 
             echo "=== Batocera: fstab + users ==="
+            # NOTE the FAT32 boot partition is mounted at /boot (not
+            # /boot/efi like the other distros) because batocera-part —
+            # which S11share uses to autodetect the SHARE partition by
+            # 'partition next to /boot' — greps /proc/mounts for /boot.
+            # If we mount at /boot/efi the SHARE auto-detection silently
+            # fails and S11share falls back to a 256 MB tmpfs at
+            # /userdata, which won't fit Steam / save data / anything.
+            # PS5 loader reads bzImage / cmdline.txt from the FAT32
+            # partition's root regardless of where Linux mounts it.
+            mkdir -p "$CHROOT/boot"
             cat > "$CHROOT/etc/fstab" <<FSTAB
 LABEL=$ROOT_LABEL / ext4 defaults 0 1
-LABEL=$EFI_LABEL  /boot/efi vfat defaults 0 1
+LABEL=$EFI_LABEL  /boot vfat defaults 0 1
+LABEL=SHARE       /userdata ext4 defaults 0 2
 FSTAB
+
+            echo "=== Batocera: first-boot SHARE partition creator ==="
+            # Batocera's design splits the disk into:
+            #   sda1 = rootfs (this image, ~15 GB)
+            #   sda2 = /boot FAT32
+            #   sda3 = /userdata SHARE (everything user-facing — games,
+            #           BIOS, Steam flatpak, screenshots, saves)
+            # The image only ships sda1+sda2. On first boot, expand the
+            # GPT backup header to the actual disk end (so parted/sgdisk
+            # see the full free space) then carve sda3 = SHARE out of
+            # the remainder. Self-disables after running.
+            cat > "$CHROOT/usr/local/sbin/ps5-share-init" <<'PS5SHARE'
+#!/bin/sh
+# First-boot: create the SHARE partition + fs if missing, so /userdata
+# is a real disk-backed mount (916 GB on a 1 TB drive) instead of the
+# 256 MB tmpfs fallback in /etc/init.d/S11share.
+set -e
+ROOT_DEV=$(findmnt -no SOURCE /)
+DISK=$(/usr/bin/batocera-part prefix "$ROOT_DEV")
+SHARE_NUM=$(/usr/bin/batocera-part share_internal_num)
+SHARE_DEV="${DISK}${SHARE_NUM}"
+[ -b "$DISK" ] || exit 0
+# already created on a previous boot?
+if [ -b "$SHARE_DEV" ] && blkid -L SHARE >/dev/null 2>&1; then
+    exit 0
+fi
+echo "ps5-share-init: extending GPT + creating $SHARE_DEV"
+sgdisk -e "$DISK"
+partprobe "$DISK"
+sleep 1
+sgdisk -n "$SHARE_NUM":0:0 -c "$SHARE_NUM":share -t "$SHARE_NUM":8300 "$DISK"
+partprobe "$DISK"
+sleep 1
+mkfs.ext4 -L SHARE -F "$SHARE_DEV"
+PS5SHARE
+            chmod +x "$CHROOT/usr/local/sbin/ps5-share-init"
+            # Hook into Batocera's init order: run BEFORE S11share so
+            # S11share's batocera-part share_internal call finds the
+            # partition we just created.
+            cat > "$CHROOT/etc/init.d/S07ps5share" <<'INITSHARE'
+#!/bin/sh
+# First-boot SHARE partition creator — see /usr/local/sbin/ps5-share-init
+case "$1" in
+    start|"") /usr/local/sbin/ps5-share-init >> /tmp/ps5-share-init.log 2>&1 ;;
+    stop|restart|reload|*) ;;
+esac
+INITSHARE
+            chmod +x "$CHROOT/etc/init.d/S07ps5share"
             # Batocera ships root passwordless. Leave root usable (a lot of
             # Batocera scripts assume root) but ALSO add a ps5 user so the
             # release-page convention works.
