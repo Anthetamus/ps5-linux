@@ -61,6 +61,20 @@ packages:
     - sdl2
     - lib32-sdl2
 
+    # KDE Plasma — desktop mode (SteamOS-style switch out of Big Picture).
+    # Wayland session only; no SDDM (we start plasma-wayland from tty1).
+    - plasma-desktop
+    - plasma-wayland-protocols
+    - plasma-workspace
+    - kwin
+    - konsole
+    - dolphin
+    - kate
+    - firefox
+    - breeze
+    - breeze-gtk
+    - xdg-desktop-portal-kde
+
     # Networking
     - networkmanager
     - linux-firmware
@@ -204,21 +218,77 @@ actions:
     ExecStart=-/usr/bin/agetty --autologin gamer --noclear %I $TERM
     EOF
 
+    # Mode-switch convention: /etc/ps5-mode holds either "gaming" or
+    # "desktop". bash_profile picks the session accordingly. Switch
+    # scripts (/usr/local/bin/{gaming,desktop}-mode) rewrite the file
+    # and kill the current session — getty re-autologins and starts the
+    # other session.
+    echo gaming > /etc/ps5-mode
+    chmod 666 /etc/ps5-mode
+
     cat > /home/gamer/.bash_profile <<'EOF'
     if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" = 1 ]; then
         export XDG_RUNTIME_DIR=/run/user/$(id -u)
         export XDG_SESSION_TYPE=wayland
         export LIBSEAT_BACKEND=seatd
         [ -d "$XDG_RUNTIME_DIR" ] || (mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR")
-        exec >/tmp/gamescope.log 2>&1
-        set -x
-        gamescope --steam --output-width 1920 --output-height 1080 --fullscreen \
-            -- steam -gamepadui -bigpicture
-        # If gamescope exits (crash, Steam quit), drop to a shell so the
-        # user can ssh in / inspect /tmp/gamescope.log on tty1. Avoids
-        # the spinning-launch loop that hides errors.
+
+        mode=$(cat /etc/ps5-mode 2>/dev/null || echo gaming)
+        case "$mode" in
+            desktop)
+                exec >/tmp/plasma.log 2>&1
+                set -x
+                export DESKTOP_SESSION=plasma
+                exec startplasma-wayland
+                ;;
+            *)
+                exec >/tmp/gamescope.log 2>&1
+                set -x
+                gamescope --steam --output-width 1920 --output-height 1080 --fullscreen \
+                    -- steam -gamepadui -bigpicture
+                ;;
+        esac
+        # If session exits (crash, user quit), drop to a bash login so the
+        # user can ssh in / read the log. Avoids a spin-restart loop that
+        # hides errors.
     fi
     EOF
+
+    # /usr/local/bin/gaming-mode + desktop-mode: write the new mode,
+    # then kill the current session — getty re-autologins and starts
+    # the requested one. Both are sudo-NOPASSWD via the wheel rule.
+    cat > /usr/local/bin/desktop-mode <<'EOF'
+    #!/bin/sh
+    # Switch arch-gamescope to KDE Plasma desktop session.
+    sudo sh -c 'echo desktop > /etc/ps5-mode'
+    sudo pkill -KILL -u gamer gamescope 2>/dev/null
+    sudo pkill -KILL -u gamer steam 2>/dev/null
+    EOF
+    chmod 755 /usr/local/bin/desktop-mode
+
+    cat > /usr/local/bin/gaming-mode <<'EOF'
+    #!/bin/sh
+    # Switch arch-gamescope back to gamescope + Steam Big Picture.
+    sudo sh -c 'echo gaming > /etc/ps5-mode'
+    sudo pkill -KILL -u gamer plasma_session 2>/dev/null
+    sudo pkill -KILL -u gamer kwin_wayland 2>/dev/null
+    sudo pkill -KILL -u gamer startplasma-wayland 2>/dev/null
+    EOF
+    chmod 755 /usr/local/bin/gaming-mode
+
+    # Steam library shortcut so "Return to Desktop" can be added from the
+    # Big Picture games list.
+    mkdir -p /home/gamer/.local/share/applications
+    cat > /home/gamer/.local/share/applications/return-to-desktop.desktop <<'EOF'
+    [Desktop Entry]
+    Type=Application
+    Name=Return to Desktop
+    Comment=Switch arch-gamescope to KDE Plasma desktop session
+    Exec=/usr/local/bin/desktop-mode
+    Icon=preferences-desktop
+    Categories=System;
+    EOF
+
     chown -R gamer:gamer /home/gamer
 
     [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
