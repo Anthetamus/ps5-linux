@@ -178,8 +178,42 @@ MODPROBE
             # Host (image-builder, ubuntu:24.04) has initramfs-tools. Trick
             # it into building for our PS5 kernel by symlinking the chroot's
             # modules into /lib/modules/$KVER, then unlinking after.
+            #
+            # initramfs-tools default behaviour: autodetect kernel modules
+            # from /sys on the BUILD HOST — which is a docker container with
+            # no USB, no amdgpu, no real disks. The resulting initrd would
+            # ship without xhci_pci / usb_storage / ext4 / amdgpu drivers,
+            # and the PS5 hangs silently when the kernel tries to find the
+            # USB root partition. Override with an explicit modules list +
+            # MODULES=most so initramfs-tools includes everything the PS5
+            # actually needs at boot.
             mkdir -p /lib/modules
             ln -sfn "$CHROOT/lib/modules/$KVER" "/lib/modules/$KVER"
+
+            cat > /etc/initramfs-tools/modules <<'INITMODS'
+# USB host controllers (PS5 boot drive is on USB 3 — xhci is the must-have).
+xhci_pci
+xhci_hcd
+ehci_pci
+ehci_hcd
+ohci_pci
+ohci_hcd
+# USB storage class + UAS (faster path).
+usb_storage
+uas
+sd_mod
+# Filesystems for root + EFI.
+ext4
+vfat
+nls_iso8859-1
+nls_cp437
+# Common HID so a USB keyboard works at the initramfs shell if we drop there.
+usbhid
+hid_generic
+INITMODS
+            # Force MODULES=most (curated full driver set, no autodetect).
+            sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
+
             mkinitramfs -k "$KVER" -o "$CHROOT/boot/efi/initrd.img"
             rm -f "/lib/modules/$KVER"
             rm -rf "$KSTAGE"
