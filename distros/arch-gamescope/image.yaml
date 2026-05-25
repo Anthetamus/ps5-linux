@@ -170,6 +170,15 @@ actions:
       symlink_wants "/usr/lib/systemd/system/${s}.service" default.target || true
     done
 
+    # Skip systemd-firstboot's interactive timezone/locale prompt on first
+    # boot. It blocks tty1 until the user answers — and on the PS5 the
+    # autologin gamer + immediate gamescope race past it, leaving the prompt
+    # visible only briefly before the display goes black.
+    ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+    echo "LANG=en_US.UTF-8" > /etc/locale.conf
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+    locale-gen 2>/dev/null || true
+
 - trigger: post-files
   action: |-
     #!/bin/bash
