@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     initramfs-tools fdisk gdisk udev kpartx \
     xz-utils bzip2 zstd \
     umoci skopeo \
+    python3-minimal \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go (Ubuntu 24.04 only has 1.22, distrobuilder needs newer)
