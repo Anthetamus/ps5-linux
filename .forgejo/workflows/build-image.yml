@@ -8,7 +8,7 @@ on:
         description: 'Distribution'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, mint22-cinnamon, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, arch-gamescope, alpine, fedora-gnome, fedora-kde, bazzite, bazzite-deck, batocera]
+        options: [all, ubuntu2604, mint22-cinnamon, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, miaos, alpine, fedora-gnome, fedora-kde, bazzite, bazzite-deck, batocera]
   workflow_call:
     inputs:
       distro:
@@ -33,7 +33,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","mint22-cinnamon","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","arch-gamescope","alpine","fedora-gnome","fedora-kde","bazzite","bazzite-deck","batocera"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","mint22-cinnamon","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","miaos","alpine","fedora-gnome","fedora-kde","bazzite","bazzite-deck","batocera"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi
@@ -233,7 +233,7 @@ jobs:
                  '',
                  '## Images',
                  '| Image | Download |','|-------|----------|']
-          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('mint22-cinnamon','Linux Mint 22 (Cinnamon, Ubuntu 24.04 base)'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('debian13-proxmox','Debian 13 + Proxmox VE 9'),('arch','Arch'),('cachyos','CachyOS'),('arch-gamescope','Arch + gamescope + Steam Big Picture'),('alpine','Alpine'),('fedora-gnome','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)'),('bazzite-deck','Bazzite-Deck (Steam-Deck UI variant)'),('batocera','Batocera (retro emulation)')]:
+          for distro,label in [('ubuntu2604','Ubuntu 26.04'),('mint22-cinnamon','Linux Mint 22 (Cinnamon, Ubuntu 24.04 base)'),('debian13-xfce','Debian 13 (XFCE)'),('debian13-server','Debian 13 (server, no DE)'),('debian13-gnome','Debian 13 (GNOME)'),('debian13-kde','Debian 13 (KDE Plasma)'),('debian13-proxmox','Debian 13 + Proxmox VE 9'),('arch','Arch'),('cachyos','CachyOS'),('miaos','MiaOS (gaming + KDE desktop)'),('alpine','Alpine'),('fedora-gnome','Fedora 44 (GNOME)'),('fedora-kde','Fedora 44 (KDE Plasma)'),('bazzite','Bazzite (gaming-Fedora, uBlue)'),('bazzite-deck','Bazzite-Deck (Steam-Deck UI variant)'),('batocera','Batocera (retro emulation)')]:
               f=f'ps5-{distro}.img.xz'
               lines.append(f'| {label} | [{f}]({rel}/{f}) |')
           lines += ['','**SHA256 checksums:**','```',sums.strip(),'```']

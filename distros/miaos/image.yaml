@@ -1,7 +1,7 @@
 image:
-  name: ps5-arch-gamescope
+  name: ps5-miaos
   distribution: archlinux
-  description: Arch + gamescope + Steam Big Picture autostart
+  description: MiaOS — gaming-mode (gamescope+Steam) + KDE desktop mode for PS5
   architecture: x86_64
 
 source:
@@ -218,6 +218,24 @@ actions:
     ExecStart=-/usr/bin/agetty --autologin gamer --noclear %I $TERM
     EOF
 
+    # Override /etc/os-release so the system identifies as MiaOS instead
+    # of "Arch Linux" in motd, login banner, neofetch, etc. We're still
+    # Arch underneath — keep ID_LIKE=arch for shell scripts that detect
+    # distro via /etc/os-release.
+    cat > /etc/os-release <<'EOF'
+    NAME="MiaOS"
+    PRETTY_NAME="MiaOS"
+    ID=miaos
+    ID_LIKE=arch
+    BUILD_ID=rolling
+    HOME_URL="https://git.etawen.dev/mia/ps5-linux-image"
+    SUPPORT_URL="https://discord.gg/v3zHCRfHE"
+    LOGO=archlinux-logo
+    EOF
+    # Some tools also read /usr/lib/os-release; mirror.
+    cp /etc/os-release /usr/lib/os-release
+    echo "MiaOS" > /etc/hostname
+
     # Mode-switch convention: /etc/ps5-mode holds either "gaming" or
     # "desktop". bash_profile picks the session accordingly. Switch
     # scripts (/usr/local/bin/{gaming,desktop}-mode) rewrite the file
@@ -259,7 +277,7 @@ actions:
     # the requested one. Both are sudo-NOPASSWD via the wheel rule.
     cat > /usr/local/bin/desktop-mode <<'EOF'
     #!/bin/sh
-    # Switch arch-gamescope to KDE Plasma desktop session.
+    # Switch miaos to KDE Plasma desktop session.
     sudo sh -c 'echo desktop > /etc/ps5-mode'
     sudo pkill -KILL -u gamer gamescope 2>/dev/null
     sudo pkill -KILL -u gamer steam 2>/dev/null
@@ -268,7 +286,7 @@ actions:
 
     cat > /usr/local/bin/gaming-mode <<'EOF'
     #!/bin/sh
-    # Switch arch-gamescope back to gamescope + Steam Big Picture.
+    # Switch miaos back to gamescope + Steam Big Picture.
     sudo sh -c 'echo gaming > /etc/ps5-mode'
     sudo pkill -KILL -u gamer plasma_session 2>/dev/null
     sudo pkill -KILL -u gamer kwin_wayland 2>/dev/null
@@ -283,7 +301,7 @@ actions:
     [Desktop Entry]
     Type=Application
     Name=Return to Desktop
-    Comment=Switch arch-gamescope to KDE Plasma desktop session
+    Comment=Switch miaos to KDE Plasma desktop session
     Exec=/usr/local/bin/desktop-mode
     Icon=preferences-desktop
     Categories=System;
