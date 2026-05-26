@@ -203,9 +203,11 @@ actions:
     /etc/kernel/postinst.d/zz-update-boot
 
     # IgnorePkg keeps `pacman -Syu` from replacing our patched linux-ps5
-    # kernel with an upstream Arch kernel and breaking boot.
+    # kernel with an upstream Arch kernel and breaking boot. It's only
+    # honoured under [options] — appending to end of pacman.conf lands
+    # under [multilib] which pacman ignores + complains about each Syu.
     sed -i '/^IgnorePkg/d' /etc/pacman.conf
-    echo 'IgnorePkg = linux-ps5' >> /etc/pacman.conf
+    sed -i '/^\[options\]/a IgnorePkg = linux-ps5' /etc/pacman.conf
 
 mappings:
   architecture_map: archlinux

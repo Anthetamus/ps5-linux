@@ -352,8 +352,11 @@ actions:
     mkdir -p /boot/efi
     /etc/kernel/postinst.d/zz-update-boot
 
+    # IgnorePkg is only honoured under [options]. Appending to end of
+    # pacman.conf lands it under [multilib] — pacman ignores it and
+    # complains every Syu. Insert directly after the [options] header.
     sed -i '/^IgnorePkg/d' /etc/pacman.conf
-    echo 'IgnorePkg = linux-ps5' >> /etc/pacman.conf
+    sed -i '/^\[options\]/a IgnorePkg = linux-ps5' /etc/pacman.conf
 
 mappings:
   architecture_map: archlinux
