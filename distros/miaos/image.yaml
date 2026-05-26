@@ -260,7 +260,17 @@ actions:
             *)
                 exec >/tmp/gamescope.log 2>&1
                 set -x
-                gamescope --steam --output-width 1920 --output-height 1080 --fullscreen \
+                # Don't force a specific mode (--output-width/height/--fullscreen)
+                # — let gamescope negotiate from EDID. On TVs whose DP→HDMI
+                # bridge can't accept the kernel's aggressive link-training
+                # at 1920x1080@60, forcing the mode results in a black HDMI
+                # output (DP "Link Training Error, could not get CR after 100
+                # tries"). EDID negotiation lets gamescope pick a mode the
+                # tester's TV actually accepts.
+                # --sdr-gamut-wideness 0 keeps the SDR colour space at sRGB;
+                # the PS5's internal DP→HDMI bridge can't translate BT.2020.
+                gamescope --backend drm -e --prefer-output DP-1 \
+                    --sdr-gamut-wideness 0 \
                     -- steam -gamepadui -bigpicture
                 ;;
         esac
