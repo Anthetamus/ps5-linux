@@ -302,6 +302,27 @@ actions:
     EOF
     chmod 755 /usr/local/bin/gaming-mode
 
+    # Steam Big Picture's "Power -> Switch to Desktop" hard-codes a call to
+    # /usr/bin/steamos-session-select. Without this shim Steam hangs on a
+    # "switching to desktop" dialog forever because the binary it expects
+    # doesn't exist. Shim delegates to our desktop-mode / gaming-mode.
+    cat > /usr/bin/steamos-session-select <<'EOF'
+    #!/bin/sh
+    case "${1:-}" in
+        desktop|plasma|plasma-wayland|plasmax11)
+            exec /usr/local/bin/desktop-mode
+            ;;
+        gamescope|steam|steamos|gaming)
+            exec /usr/local/bin/gaming-mode
+            ;;
+        *)
+            echo >&2 "steamos-session-select: unknown session '$1'"
+            exit 1
+            ;;
+    esac
+    EOF
+    chmod 755 /usr/bin/steamos-session-select
+
     # Steam library shortcut so "Return to Desktop" can be added from the
     # Big Picture games list.
     mkdir -p /home/gamer/.local/share/applications
