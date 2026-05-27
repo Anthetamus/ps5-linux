@@ -82,19 +82,11 @@ case "$DISTRO" in
             IMG_SIZE=16000
         fi
         ;;
-    # Gaming image: Arch base + gamescope + Steam + lib32 stack. Steam is
-    # ~2 GB and dual 32/64-bit Mesa/Vulkan adds another ~1 GB. Bump from
-    # 12 -> 16 GB so there's headroom for a game.
-    miaos*)
-        if [ "$IMG_SIZE" = "12000" ]; then
-            IMG_SIZE=16000
-        fi
-        ;;
 esac
 
 if [ -z "$FORMAT" ]; then
     case "$DISTRO" in
-        arch|cachyos|miaos*) FORMAT="arch" ;;
+        arch|cachyos) FORMAT="arch" ;;
         fedora*|bazzite*)        FORMAT="rpm" ;;
         all)                     FORMAT="all" ;;
         *)                       FORMAT="deb" ;;
