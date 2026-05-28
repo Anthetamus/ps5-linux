@@ -1344,7 +1344,8 @@ actions:
     zT9dwV3RgP83B94uOK89Giyuju0yl6IZV8dfF8IikPmLdPvVuNYcsp4E7TQHhUW1hWGT5s5kImiE
     hZA8LNhZogSQ89ytsH7pMiK73rHy3nJoAn5JGZ035VHHgiSZ8HHXvYL0o9qVTRC+t9mzg58/aTJx
     2XR9l1Q7RkoZtWP1wmXpevnuhRVt8xn8AZyZnXzYj7aAXOPPTpoty2zys+8=
-    DEVUAN_KEYRING_B64    apt-get update
+    DEVUAN_KEYRING_B64
+    apt-get update
 
 - trigger: post-update
   action: |-

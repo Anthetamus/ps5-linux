@@ -153,7 +153,8 @@ actions:
     echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry
 
     # Proxmox no-subscription repo + key.
-    install -d /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.d    apt-get update
+    install -d /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/preferences.d
+    apt-get update
     apt-get install -y --no-install-recommends wget ca-certificates gnupg
     wget -qO /etc/apt/keyrings/proxmox-release-trixie.gpg \
         https://enterprise.proxmox.com/debian/proxmox-release-trixie.gpg
