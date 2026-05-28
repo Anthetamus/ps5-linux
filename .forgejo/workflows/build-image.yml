@@ -207,6 +207,46 @@ jobs:
               "$API/releases/$REL_ID/assets?name=$FILE"
           ) 9>/data/cache/ps5/.release-upload.lock
 
+      - name: Attach kernel package(s) to release (per matrix format)
+        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          DISTRO: ${{ matrix.distro }}
+        run: |
+          set -euo pipefail
+          API="$SERVER/api/v1/repos/$REPO"
+          UA="ci-kernel-uploader/1.0"
+          AUTH="Authorization: token $FORGEJO_TOKEN"
+          # Mirror the FORMAT mapping in build_image.sh so each distro only
+          # publishes the kernel package(s) it actually uses. Multiple
+          # distros share a format (5 debian variants share linux-ps5.deb)
+          # but the flock+delete-then-PUT pattern below is idempotent.
+          case "$DISTRO" in
+            arch|cachyos|artix*) GLOB='linux-ps5*.pkg.tar.zst' ;;
+            fedora*|bazzite*)    GLOB='linux-ps5-*.rpm' ;;
+            alpine|batocera*)    echo "no published kernel pkg for $DISTRO (extracted manually)"; exit 0 ;;
+            *)                   GLOB='linux-ps5_*.deb linux-ps5-*.deb' ;;
+          esac
+          (
+            flock -x 9
+            REL_ID=$(curl -fsS -H "$AUTH" -H "User-Agent: $UA"               "$API/releases/tags/latest" | python3 -c "import json,sys;print(json.load(sys.stdin)['id'])")
+            for pattern in $GLOB; do
+              for f in image/linux-bin/$pattern; do
+                [ -f "$f" ] || continue
+                NAME=$(basename "$f")
+                echo "publishing $NAME"
+                curl -fsS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets" > /tmp/kassets.json
+                export FILE="$NAME"
+                for AID in $(python3 -c 'import json,os; print(" ".join(str(a["id"]) for a in json.load(open("/tmp/kassets.json")) if a.get("name")==os.environ["FILE"]))'); do
+                  curl -fsS -X DELETE -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets/$AID" || true
+                done
+                curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA"                   -F "attachment=@$f"                   "$API/releases/$REL_ID/assets?name=$NAME"
+              done
+            done
+          ) 9>/data/cache/ps5/.release-upload.lock
+
   release:
     needs: build
     runs-on: self-hosted
