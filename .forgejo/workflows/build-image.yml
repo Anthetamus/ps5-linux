@@ -102,9 +102,27 @@ jobs:
           ln -sfn /data/cache/ps5/linux       image/work/linux
           ln -sfn /data/cache/ps5/kernel-out  image/linux-bin
 
-      - name: Build ${{ matrix.distro }} image
+      - name: Build ${{ matrix.distro }} image (retry x3 on transient pacman/apt mirror flakes)
         run: |
-          bash image/build_image.sh --distro "${{ matrix.distro }}"
+          set -u
+          DISTRO="${{ matrix.distro }}"
+          OK=0
+          for try in 1 2 3; do
+            echo "::group::build attempt $try for $DISTRO"
+            if bash image/build_image.sh --distro "$DISTRO"; then
+              OK=1
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            if [ "$try" -lt 3 ]; then
+              echo "::warning::attempt $try failed; wiping chroot + sleeping 30s before retry $((try+1))"
+              sudo rm -rf image/work/chroot
+              mkdir -p image/work/chroot
+              sleep 30
+            fi
+          done
+          [ "$OK" = 1 ] || { echo "::error::build failed after 3 attempts"; exit 1; }
 
       - name: Set version info
         id: version
