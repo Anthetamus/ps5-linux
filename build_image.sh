@@ -18,7 +18,7 @@ usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, debian13, devuan-xfce, artix-openrc, arch, cachyos, alpine, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, debian13, devuan-sway, artix-openrc, arch, cachyos, miaos, alpine, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
@@ -82,11 +82,19 @@ case "$DISTRO" in
             IMG_SIZE=16000
         fi
         ;;
+    # Gaming image: Arch base + gamescope + Steam + lib32 stack. Steam is
+    # ~2 GB and dual 32/64-bit Mesa/Vulkan adds another ~1 GB. Bump from
+    # 12 -> 16 GB so there's headroom for a game.
+    miaos*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=16000
+        fi
+        ;;
 esac
 
 if [ -z "$FORMAT" ]; then
     case "$DISTRO" in
-        arch|cachyos|artix*) FORMAT="arch" ;;
+        arch|cachyos|miaos*|artix*) FORMAT="arch" ;;
         fedora*|bazzite*)        FORMAT="rpm" ;;
         all)                     FORMAT="all" ;;
         *)                       FORMAT="deb" ;;

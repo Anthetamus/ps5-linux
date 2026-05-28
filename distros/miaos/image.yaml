@@ -1,0 +1,362 @@
+image:
+  name: ps5-miaos
+  distribution: archlinux
+  description: MiaOS — gaming-mode (gamescope+Steam) + KDE desktop mode for PS5
+  architecture: x86_64
+
+source:
+  downloader: archlinux-http
+  url: https://geo.mirror.pkgbuild.com/iso
+  skip_verification: true
+
+packages:
+  manager: pacman
+  update: true
+  cleanup: true
+
+  repositories:
+  - name: mirrorlist
+    url: |-
+      Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+
+  sets:
+  - packages:
+    # Gaming session core
+    - gamescope
+    - steam
+    - mangohud
+    - lib32-mangohud
+    - gamemode
+    - lib32-gamemode
+
+    # X / Wayland fallback (for SSH-launched X apps + Xwayland inside gamescope)
+    - xorg-server
+    - xorg-xwayland
+    - xorg-xinit
+    - xorg-xhost
+
+    # Audio / media
+    - pipewire
+    - wireplumber
+    - pipewire-pulse
+    - pipewire-alsa
+    - alsa-utils
+
+    # Display / GPU (AMD) — DC-only path required for PS5
+    - mesa
+    - lib32-mesa
+    - vulkan-radeon
+    - lib32-vulkan-radeon
+    - libva-mesa-driver
+    - lib32-libva-mesa-driver
+    - vulkan-icd-loader
+    - lib32-vulkan-icd-loader
+    - xf86-video-amdgpu
+    - libinput
+    - xkeyboard-config
+
+    # Controllers (PS5 native, Xbox via hid-generic, 8BitDo etc)
+    - libusb
+    - lib32-libusb
+    - sdl2
+    - lib32-sdl2
+
+    # KDE Plasma — desktop mode (SteamOS-style switch out of Big Picture).
+    # Wayland session only; no SDDM (we start plasma-wayland from tty1).
+    - plasma-desktop
+    - plasma-wayland-protocols
+    - plasma-workspace
+    - kwin
+    - konsole
+    - dolphin
+    - kate
+    - firefox
+    - breeze
+    - breeze-gtk
+    - xdg-desktop-portal-kde
+
+    # Networking
+    - networkmanager
+    - linux-firmware
+
+    # System
+    - base
+    - openssh
+    - sudo
+    - nano
+    - vim
+    - bash
+    - mkinitcpio
+    - kmod
+    - e2fsprogs
+    - parted
+    - gptfdisk
+    - cloud-guest-utils
+    - polkit
+    - dbus
+    - seatd
+    - kexec-tools
+    - util-linux
+
+    # Fonts
+    - ttf-dejavu
+    - ttf-liberation
+    - noto-fonts
+    - ttf-font-awesome
+    - fontconfig
+    action: install
+
+files:
+- path: /etc/hostname
+  generator: hostname
+
+- path: /etc/hosts
+  generator: hosts
+
+- path: /etc/kernel/postinst.d/zz-update-boot
+  generator: copy
+  source: /tmp/build-staging/zz-update-boot
+  mode: "0755"
+
+- path: /etc/fstab
+  generator: copy
+  source: /tmp/build-staging/fstab
+
+- path: /usr/local/sbin/grow-rootfs
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs
+  mode: "0755"
+
+- path: /etc/systemd/system/grow-rootfs.service
+  generator: copy
+  source: /tmp/build-staging/grow-rootfs.service
+
+- path: /opt/pkgs/
+  generator: copy
+  source: /tmp/build-staging/pkgs
+
+- path: /usr/local/sbin/first-boot-setup
+  generator: copy
+  source: /tmp/build-staging/first-boot-setup
+  mode: "0755"
+
+actions:
+- trigger: post-unpack
+  action: |-
+    #!/bin/bash
+    set -eux
+    sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+
+    pacman-key --init
+    pacman-key --populate archlinux
+
+    curl -fsSL "https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on" \
+        | sed 's/^#Server/Server/' > /etc/pacman.d/mirrorlist
+
+    # Enable [multilib] for lib32-* packages
+    cat >> /etc/pacman.conf <<'EOF'
+
+    [multilib]
+    Include = /etc/pacman.d/mirrorlist
+    EOF
+
+    pacman -Syy --noconfirm
+
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
+    set -eux
+    fc-cache -f 2>/dev/null || true
+
+    symlink_wants() {
+      local src=$1
+      local target=$2
+      [ -e "$src" ] || return 0
+      mkdir -p "/etc/systemd/system/${target}.wants"
+      ln -sf "$src" "/etc/systemd/system/${target}.wants/$(basename "$src")"
+    }
+
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    symlink_wants /usr/lib/systemd/system/sshd.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/NetworkManager.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/seatd.service multi-user.target
+    for s in pipewire pipewire-pulse wireplumber; do
+      symlink_wants "/usr/lib/systemd/system/${s}.service" default.target || true
+    done
+
+    # Skip systemd-firstboot's interactive timezone/locale prompt on first
+    # boot. It blocks tty1 until the user answers — and on the PS5 the
+    # autologin gamer + immediate gamescope race past it, leaving the prompt
+    # visible only briefly before the display goes black.
+    ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+    echo "LANG=en_US.UTF-8" > /etc/locale.conf
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+    locale-gen 2>/dev/null || true
+
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    set -eux
+    mkdir -p /etc/systemd/system/local-fs.target.wants
+    ln -sf /etc/systemd/system/grow-rootfs.service \
+      /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
+
+    # gamer/gamer user. Groups: wheel (sudo), seat (seatd), input/video/render
+    # (gamescope + direct controller access — no inputplumber daemon, which
+    # grabs /dev/input and breaks gamescope on PS5).
+    useradd -m -G wheel,seat,input,video,render -s /bin/bash gamer
+    echo "gamer:gamer" | chpasswd
+    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+    # Autologin gamer on tty1, then launch gamescope+steam from .bash_profile.
+    mkdir -p /etc/systemd/system/getty@tty1.service.d
+    cat > /etc/systemd/system/getty@tty1.service.d/override.conf <<'EOF'
+    [Service]
+    ExecStart=
+    ExecStart=-/usr/bin/agetty --autologin gamer --noclear %I $TERM
+    EOF
+
+    # Override the OS identity so the system shows as MiaOS instead of
+    # "Arch Linux" in motd, login banner, neofetch, etc. On Arch
+    # /etc/os-release is a symlink to /usr/lib/os-release — write through
+    # to the canonical target. Keep ID_LIKE=arch for distro-detect scripts.
+    cat > /usr/lib/os-release <<'EOF'
+    NAME="MiaOS"
+    PRETTY_NAME="MiaOS"
+    ID=miaos
+    ID_LIKE=arch
+    BUILD_ID=rolling
+    HOME_URL="https://git.etawen.dev/mia/ps5-linux-image"
+    SUPPORT_URL="https://discord.gg/v3zHCRfHE"
+    LOGO=archlinux-logo
+    EOF
+    echo "MiaOS" > /etc/hostname
+
+    # Mode-switch convention: /etc/ps5-mode holds either "gaming" or
+    # "desktop". bash_profile picks the session accordingly. Switch
+    # scripts (/usr/local/bin/{gaming,desktop}-mode) rewrite the file
+    # and kill the current session — getty re-autologins and starts the
+    # other session.
+    echo gaming > /etc/ps5-mode
+    chmod 666 /etc/ps5-mode
+
+    cat > /home/gamer/.bash_profile <<'EOF'
+    if [ -z "$DISPLAY" ] && [ "$XDG_VTNR" = 1 ]; then
+        export XDG_RUNTIME_DIR=/run/user/$(id -u)
+        export XDG_SESSION_TYPE=wayland
+        export LIBSEAT_BACKEND=seatd
+        [ -d "$XDG_RUNTIME_DIR" ] || (mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR")
+
+        mode=$(cat /etc/ps5-mode 2>/dev/null || echo gaming)
+        case "$mode" in
+            desktop)
+                exec >/tmp/plasma.log 2>&1
+                set -x
+                export DESKTOP_SESSION=plasma
+                exec startplasma-wayland
+                ;;
+            *)
+                exec >/tmp/gamescope.log 2>&1
+                set -x
+                # Don't force a specific mode (--output-width/height/--fullscreen)
+                # — let gamescope negotiate from EDID. On TVs whose DP→HDMI
+                # bridge can't accept the kernel's aggressive link-training
+                # at 1920x1080@60, forcing the mode results in a black HDMI
+                # output (DP "Link Training Error, could not get CR after 100
+                # tries"). EDID negotiation lets gamescope pick a mode the
+                # tester's TV actually accepts.
+                # --sdr-gamut-wideness 0 keeps the SDR colour space at sRGB;
+                # the PS5's internal DP→HDMI bridge can't translate BT.2020.
+                gamescope --backend drm -e --prefer-output DP-1 \
+                    --sdr-gamut-wideness 0 \
+                    -- steam -gamepadui -bigpicture
+                ;;
+        esac
+        # If session exits (crash, user quit), drop to a bash login so the
+        # user can ssh in / read the log. Avoids a spin-restart loop that
+        # hides errors.
+    fi
+    EOF
+
+    # /usr/local/bin/gaming-mode + desktop-mode: write the new mode,
+    # then kill the current session — getty re-autologins and starts
+    # the requested one. Both are sudo-NOPASSWD via the wheel rule.
+    cat > /usr/local/bin/desktop-mode <<'EOF'
+    #!/bin/sh
+    # Switch miaos to KDE Plasma desktop session.
+    sudo sh -c 'echo desktop > /etc/ps5-mode'
+    sudo pkill -KILL -u gamer gamescope 2>/dev/null
+    sudo pkill -KILL -u gamer steam 2>/dev/null
+    EOF
+    chmod 755 /usr/local/bin/desktop-mode
+
+    cat > /usr/local/bin/gaming-mode <<'EOF'
+    #!/bin/sh
+    # Switch miaos back to gamescope + Steam Big Picture.
+    sudo sh -c 'echo gaming > /etc/ps5-mode'
+    sudo pkill -KILL -u gamer plasma_session 2>/dev/null
+    sudo pkill -KILL -u gamer kwin_wayland 2>/dev/null
+    sudo pkill -KILL -u gamer startplasma-wayland 2>/dev/null
+    EOF
+    chmod 755 /usr/local/bin/gaming-mode
+
+    # Steam Big Picture's "Power -> Switch to Desktop" hard-codes a call to
+    # /usr/bin/steamos-session-select. Without this shim Steam hangs on a
+    # "switching to desktop" dialog forever because the binary it expects
+    # doesn't exist. Shim delegates to our desktop-mode / gaming-mode.
+    cat > /usr/bin/steamos-session-select <<'EOF'
+    #!/bin/sh
+    case "${1:-}" in
+        desktop|plasma|plasma-wayland|plasmax11)
+            exec /usr/local/bin/desktop-mode
+            ;;
+        gamescope|steam|steamos|gaming)
+            exec /usr/local/bin/gaming-mode
+            ;;
+        *)
+            echo >&2 "steamos-session-select: unknown session '$1'"
+            exit 1
+            ;;
+    esac
+    EOF
+    chmod 755 /usr/bin/steamos-session-select
+
+    # Steam library shortcut so "Return to Desktop" can be added from the
+    # Big Picture games list.
+    mkdir -p /home/gamer/.local/share/applications
+    cat > /home/gamer/.local/share/applications/return-to-desktop.desktop <<'EOF'
+    [Desktop Entry]
+    Type=Application
+    Name=Return to Desktop
+    Comment=Switch miaos to KDE Plasma desktop session
+    Exec=/usr/local/bin/desktop-mode
+    Icon=preferences-desktop
+    Categories=System;
+    EOF
+
+    chown -R gamer:gamer /home/gamer
+
+    [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
+    sed -i 's/ autodetect//' /etc/mkinitcpio.conf
+
+    # Install our custom kernel packages
+    if ls /opt/pkgs/*.pkg.tar.zst 1>/dev/null 2>&1; then
+        pacman -U --noconfirm --ask 4 /opt/pkgs/*.pkg.tar.zst
+        rm -rf /opt/pkgs
+        KVER=$(ls -1t /lib/modules | head -1)
+        mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
+    fi
+
+    mkdir -p /boot/efi
+    /etc/kernel/postinst.d/zz-update-boot
+
+    # IgnorePkg is only honoured under [options]. Appending to end of
+    # pacman.conf lands it under [multilib] — pacman ignores it and
+    # complains every Syu. Insert directly after the [options] header.
+    sed -i '/^IgnorePkg/d' /etc/pacman.conf
+    sed -i '/^\[options\]/a IgnorePkg = linux-ps5' /etc/pacman.conf
+
+mappings:
+  architecture_map: archlinux

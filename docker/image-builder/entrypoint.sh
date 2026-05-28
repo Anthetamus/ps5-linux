@@ -88,6 +88,13 @@ EOF
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                  "$STAGING/pkgs/"
             ;;
+        miaos*)
+            # MiaOS recipe is self-contained in distros/miaos/image.yaml
+            # (gamescope + Steam + KDE post-install via distrobuilder actions).
+            # Only the patched kernel needs staging here.
+            mkdir -p "$STAGING/pkgs"
+            cp /kernel-debs/*.pkg.tar.zst                  "$STAGING/pkgs/"
+            ;;
         cachyos)
             mkdir -p "$STAGING/files"
             cp /repo/distros/cachyos/files/grow-rootfs                "$STAGING/files/"
