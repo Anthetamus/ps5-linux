@@ -37,6 +37,7 @@ packages:
     - firmware-linux
     - firmware-linux-free
     - firmware-linux-nonfree
+    - firmware-amd-graphics
     - firmware-misc-nonfree
     - firmware-realtek
     - firmware-iwlwifi

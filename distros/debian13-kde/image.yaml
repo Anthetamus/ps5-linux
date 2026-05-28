@@ -102,6 +102,9 @@ packages:
     - git
     - build-essential
     - bash-completion
+    - firefox-esr
+    - dialog
+    - systemd-zram-generator
 
     # Fonts
     - fonts-liberation
