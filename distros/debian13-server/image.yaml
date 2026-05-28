@@ -132,7 +132,8 @@ actions:
     #!/bin/bash
     set -eux
     rm -f /var/lib/apt/lists/*InRelease /var/lib/apt/lists/*Release /var/lib/apt/lists/*Packages* || true
-    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry    apt-get update
+    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry
+    apt-get update
 
 - trigger: post-update
   action: |-
