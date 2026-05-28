@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget git make gcc libc6-dev build-essential \
     zlib1g-dev \
-    debootstrap rsync gpg dirmngr squashfs-tools \
+    debootstrap rsync gpg gpg-agent dirmngr squashfs-tools \
     btrfs-progs \
     parted dosfstools e2fsprogs kmod \
     initramfs-tools fdisk gdisk udev kpartx \

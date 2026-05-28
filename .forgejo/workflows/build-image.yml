@@ -33,7 +33,7 @@ jobs:
         run: |
           INPUT="${{ inputs.distro || 'ubuntu2604' }}"
           if [ "$INPUT" = "all" ]; then
-            echo 'distros=["ubuntu2604","mint22-cinnamon","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","alpine","fedora-gnome","fedora-kde","bazzite","bazzite-deck","batocera"]' >> "$GITHUB_OUTPUT"
+            echo 'distros=["ubuntu2604","mint22-cinnamon","debian13-xfce","debian13-server","debian13-gnome","debian13-kde","debian13-proxmox","arch","cachyos","alpine","fedora-gnome","fedora-kde","bazzite","bazzite-deck","batocera","artix-openrc","devuan-xfce"]' >> "$GITHUB_OUTPUT"
           else
             echo "distros=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
           fi

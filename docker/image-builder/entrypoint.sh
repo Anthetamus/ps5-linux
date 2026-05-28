@@ -49,6 +49,38 @@ EOF
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/alpine/grow-rootfs.openrc     "$STAGING/"
             ;;
+        devuan*)
+            # Devuan: same deb/debootstrap pipeline, but the boot-time
+            # grow-rootfs is a sysv init script (no systemd here) instead
+            # of a .service unit.
+            cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
+            cp /repo/distros/${DISTRO}/grow-rootfs.sysv  "$STAGING/"
+            # Pre-provisioned wifi (test builds only — strip before push)
+            [ -f /repo/distros/${DISTRO}/wifi.nmconnection ] && \
+                cp /repo/distros/${DISTRO}/wifi.nmconnection "$STAGING/"
+            cp /kernel-debs/*.deb                          "$STAGING/debs/"
+            # Ubuntu's debootstrap (the one bundled in this builder image)
+            # doesn't ship a script for any Devuan codename, so it bails on
+            # `excalibur` / `daedalus` etc. with "No such script". Excalibur
+            # is built on top of Debian 13 Trixie's archive layout, so
+            # symlinking the suite onto debootstrap's trixie script gives
+            # us a functional bootstrap path without touching the Dockerfile.
+            DEVUAN_RELEASE=$(awk '/^[[:space:]]*release:/ {print $2; exit}' \
+                /repo/distros/${DISTRO}/image.yaml)
+            if [ -n "$DEVUAN_RELEASE" ] && [ ! -e "/usr/share/debootstrap/scripts/$DEVUAN_RELEASE" ]; then
+                ln -sf trixie "/usr/share/debootstrap/scripts/$DEVUAN_RELEASE"
+            fi
+            ;;
+        artix*)
+            # Artix bootstraps from its live ISO (no upstream tarball);
+            # the only staged files are the OpenRC grow-rootfs pair and
+            # the linux-ps5 .pkg.tar.zst kernel. Everything else happens
+            # inside the chroot in the build case below.
+            cp /repo/distros/artix-openrc/grow-rootfs        "$STAGING/"
+            cp /repo/distros/artix-openrc/grow-rootfs.openrc "$STAGING/"
+            mkdir -p "$STAGING/pkgs"
+            cp /kernel-debs/*.pkg.tar.zst                    "$STAGING/pkgs/"
+            ;;
         arch)
             cp /repo/distros/arch/grow-rootfs              "$STAGING/"
             cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
@@ -391,6 +423,185 @@ SVC
             ln -sf ../grow-rootfs.service \
                 "$CHROOT/etc/systemd/system/sysinit.target.wants/grow-rootfs.service"
             ;;
+        artix*)
+            # Artix Linux: Arch derivative without systemd. The project
+            # ships ISOs (artix-base-{openrc,runit,dinit,s6}-…iso) but no
+            # bootstrap tarball, so we extract the live airootfs squashfs
+            # from the ISO and customize it in chroot. Pacman + Artix
+            # repos already work inside the airootfs (it's a fully
+            # functional rootfs the live env runs on).
+            ARTIX_INIT="${ARTIX_INIT:-openrc}"
+            ARTIX_BUILD="${ARTIX_BUILD:-20260402}"
+            ARTIX_URL="${ARTIX_URL:-https://mirror1.artixlinux.org/iso/artix-base-${ARTIX_INIT}-${ARTIX_BUILD}-x86_64.iso}"
+
+            echo "=== Artix: locate / download $ARTIX_INIT build $ARTIX_BUILD ==="
+            CACHED="/build/cache/artix-base-${ARTIX_INIT}-${ARTIX_BUILD}-x86_64.iso"
+            if [ ! -s "$CACHED" ]; then
+                echo ">> No cached ISO, downloading"
+                wget --tries=3 -O "$CACHED.part" "$ARTIX_URL"
+                mv "$CACHED.part" "$CACHED"
+            fi
+            echo ">> Using $CACHED ($(du -h "$CACHED" | cut -f1))"
+
+            echo "=== Artix: mount ISO + locate airootfs.sfs ==="
+            ARTIX_MNT=$(mktemp -d)
+            mount -o ro,loop "$CACHED" "$ARTIX_MNT"
+            # Artix ISOs put the airootfs squashfs under either
+            # /arch/x86_64/airootfs.sfs (current) or /arch/boot/x86_64/
+            # (older). Probe both.
+            ARTIX_SFS=""
+            for c in /arch/x86_64/airootfs.sfs /arch/boot/x86_64/airootfs.sfs /LiveOS/squashfs.img; do
+                [ -f "$ARTIX_MNT$c" ] && ARTIX_SFS="$ARTIX_MNT$c" && break
+            done
+            if [ -z "$ARTIX_SFS" ]; then
+                echo "ERROR: airootfs squashfs not found in Artix ISO:"
+                find "$ARTIX_MNT" -maxdepth 4 -name '*.sfs' -o -name '*.img' | head -20
+                exit 1
+            fi
+
+            echo "=== Artix: unsquashfs $ARTIX_SFS -> $CHROOT ==="
+            unsquashfs -f -d "$CHROOT" "$ARTIX_SFS"
+
+            umount "$ARTIX_MNT"
+            rmdir "$ARTIX_MNT"
+
+            echo "=== Artix: strip live-iso scaffolding ==="
+            # Live ISOs ship calamares + archiso/artools install scripts
+            # we don't want on a flashed root. They're harmless if left,
+            # but bloat the image and may auto-start on TTY1.
+            rm -rf "$CHROOT/etc/skel/Desktop" \
+                   "$CHROOT/etc/calamares" \
+                   "$CHROOT/etc/runlevels"/*/calamares* 2>/dev/null || true
+            # The live ISO autostarts a "live" user shell on tty1. Disable.
+            rm -f "$CHROOT/etc/runit/runsvdir/default/agetty-autologin-tty1" \
+                  "$CHROOT/etc/runlevels/default/agetty-autologin-tty1" \
+                  "$CHROOT/etc/init.d/agetty-autologin-tty1" 2>/dev/null || true
+            # Remove the `artix` live user entries if present (lives in
+            # /etc/passwd of the airootfs).
+            if [ -f "$CHROOT/etc/passwd" ]; then
+                sed -i '/^artix:/d;/^live:/d' "$CHROOT/etc/passwd" "$CHROOT/etc/shadow" "$CHROOT/etc/group" 2>/dev/null || true
+            fi
+
+            echo "=== Artix: stage linux-ps5 + grow-rootfs ==="
+            mkdir -p "$CHROOT/var/cache/ps5-pkgs"
+            cp "$STAGING/pkgs/"*.pkg.tar.zst "$CHROOT/var/cache/ps5-pkgs/"
+            install -Dm755 "$STAGING/grow-rootfs"        "$CHROOT/usr/local/sbin/grow-rootfs"
+            install -Dm755 "$STAGING/grow-rootfs.openrc" "$CHROOT/etc/init.d/grow-rootfs"
+            # Pre-provisioned wifi (test builds only — strip before push).
+            # NM requires mode 0600 on keyfiles; anything looser is silently
+            # ignored.
+            if [ -f /repo/distros/artix-openrc/wifi.nmconnection ]; then
+                install -Dm600 /repo/distros/artix-openrc/wifi.nmconnection \
+                    "$CHROOT/etc/NetworkManager/system-connections/wifi.nmconnection"
+            fi
+
+            echo "=== Artix: enter chroot for pacman + service setup ==="
+            cleanup_artix_mounts() {
+                for m in dev sys proc; do
+                    mountpoint -q "$CHROOT/$m" && umount "$CHROOT/$m" || true
+                done
+            }
+            trap cleanup_artix_mounts RETURN ERR EXIT
+            mount --bind /proc "$CHROOT/proc"
+            mount --bind /sys  "$CHROOT/sys"
+            mount --bind /dev  "$CHROOT/dev"
+            rm -f "$CHROOT/etc/resolv.conf"
+            cp /etc/resolv.conf "$CHROOT/etc/resolv.conf"
+
+            chroot "$CHROOT" /bin/bash -e <<'ARTIX_IN'
+                # Pacman 7 Landlock sandbox is unsupported under QEMU/docker.
+                sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf 2>/dev/null || true
+
+                # The live ISO's pacman config has [system] [world] [galaxy]
+                # already wired; make sure keyrings are populated for fresh
+                # installs from those repos.
+                pacman-key --init
+                pacman-key --populate artixlinux 2>/dev/null || pacman-key --populate artix 2>/dev/null || true
+                # Refresh package DBs against current mirrors.
+                pacman -Syy --noconfirm
+
+                # Install desktop + media + networking + utils. XFCE on
+                # OpenRC is the most reliable Artix DE; lightdm is the
+                # standard greeter.
+                pacman -S --noconfirm --needed --overwrite '*' \
+                    xfce4 xfce4-goodies xfce4-terminal thunar \
+                    lightdm lightdm-gtk-greeter lightdm-openrc \
+                    xorg xorg-xinit \
+                    mesa vulkan-radeon libva-mesa-driver \
+                    xf86-video-amdgpu xorg-server xorg-xwayland \
+                    libinput xkeyboard-config \
+                    pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils \
+                    networkmanager networkmanager-openrc network-manager-applet \
+                    elogind-openrc \
+                    openssh openssh-openrc \
+                    sudo bash nano vim htop wget curl git base-devel \
+                    e2fsprogs parted gptfdisk cloud-guest-utils \
+                    polkit dbus dbus-openrc seatd seatd-openrc \
+                    kexec-tools kmod \
+                    ttf-dejavu ttf-liberation noto-fonts fontconfig \
+                    linux-firmware \
+                    || true
+
+                # Install our patched kernel + modules.
+                pacman -U --noconfirm --overwrite '*' /var/cache/ps5-pkgs/*.pkg.tar.zst
+                rm -rf /var/cache/ps5-pkgs
+
+                # mkinitcpio: drop autodetect so the initramfs covers the
+                # PS5's hardware, not the build host's (matches the arch
+                # path's recipe).
+                sed -i 's/ autodetect//' /etc/mkinitcpio.conf
+                KVER=$(ls -1t /lib/modules | head -1)
+                mkinitcpio -k "$KVER" -g "/boot/initramfs-${KVER}.img" || true
+                mkdir -p /boot/efi
+                cp "/boot/vmlinuz-$KVER"            /boot/efi/bzImage
+                cp "/boot/initramfs-${KVER}.img"    /boot/efi/initrd.img
+
+                # SSH
+                sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
+                sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+                # OpenRC service wiring. The -openrc subpackages drop the
+                # init scripts; rc-update plugs them into runlevels.
+                rc-update add dbus default        || true
+                rc-update add elogind boot        || true
+                rc-update add seatd default       || true
+                rc-update add NetworkManager default || true
+                rc-update add sshd default        || true
+                rc-update add lightdm default     || true
+                rc-update add grow-rootfs default || true
+
+                # Default user (ps5 / ps5)
+                if ! id ps5 >/dev/null 2>&1; then
+                    useradd -m -s /bin/bash -G wheel,video,audio,input,seat,plugdev ps5
+                fi
+                echo "ps5:ps5" | chpasswd
+                passwd -l root
+                echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+                # LightDM autologin
+                mkdir -p /etc/lightdm
+                if ! grep -q '^autologin-user' /etc/lightdm/lightdm.conf 2>/dev/null; then
+                    sed -i '/^\[Seat:\*\]/a autologin-user=ps5\nautologin-user-timeout=0' \
+                        /etc/lightdm/lightdm.conf || true
+                fi
+                # XFCE auto-start on the autologin session is lightdm-default.
+
+                # amdgpu options — PS5 Oberon GPU needs dpm disabled.
+                mkdir -p /etc/modprobe.d
+                cat > /etc/modprobe.d/ps5-amdgpu.conf <<AMDGPU
+options amdgpu dpm=0 gpu_recovery=0
+AMDGPU
+
+                # Hold linux-ps5 against upstream replacement.
+                sed -i '/^IgnorePkg/d' /etc/pacman.conf
+                sed -i '/^\[options\]/a IgnorePkg = linux-ps5' /etc/pacman.conf
+
+                # vconsole.conf needed by mkinitcpio sd-vconsole hook.
+                [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
+ARTIX_IN
+            cleanup_artix_mounts
+            trap - RETURN ERR EXIT
+            ;;
         bazzite*)
             # Bazzite is an OCI atomic image; bypass distrobuilder entirely.
             # DISTRO=bazzite      -> ghcr.io/ublue-os/bazzite:stable
@@ -705,6 +916,23 @@ case "$DISTRO" in
         rm -f "$CHROOT/etc/resolv.conf"
         ln -sf /run/systemd/resolve/stub-resolv.conf "$CHROOT/etc/resolv.conf"
         ;;
+    devuan*)
+        # No systemd-resolved on Devuan. resolvconf creates
+        # /etc/resolvconf/run/resolv.conf at boot; NetworkManager writes
+        # through to it (rc-manager=resolvconf). Point /etc/resolv.conf
+        # at that path so name resolution works as soon as NM brings up
+        # an interface.
+        rm -f "$CHROOT/etc/resolv.conf"
+        ln -sf /etc/resolvconf/run/resolv.conf "$CHROOT/etc/resolv.conf"
+        ;;
+    artix*)
+        # No systemd-resolved on Artix either. NetworkManager writes
+        # /etc/resolv.conf directly when dns=default (the openrc-nm
+        # default). Drop the build-container's resolv.conf so NM has
+        # a clean slate to populate on first boot.
+        rm -f "$CHROOT/etc/resolv.conf"
+        : > "$CHROOT/etc/resolv.conf"
+        ;;
 esac
 
 # --- ps5-linux-tools: fan + boost services ---
@@ -737,18 +965,111 @@ mkdir -p "$OPT_DEST"
 cp -a "$PS5TOOLS_DIR" "$OPT_DEST/ps5-linux-tools"
 rm -rf "$OPT_DEST/ps5-linux-tools/.git"
 
-if [ "$DISTRO" != "alpine" ]; then
-    # systemd distros: drop the service files and enable them.
-    install -Dm644 "$PS5TOOLS_DIR/systemd/ps5fan.service" \
-        "$CHROOT/etc/systemd/system/ps5fan.service"
-    install -Dm644 "$PS5TOOLS_DIR/systemd/ps5boost.service" \
-        "$CHROOT/etc/systemd/system/ps5boost.service"
-    mkdir -p "$CHROOT/etc/systemd/system/multi-user.target.wants"
-    ln -sf ../ps5fan.service \
-        "$CHROOT/etc/systemd/system/multi-user.target.wants/ps5fan.service"
-    ln -sf ../ps5boost.service \
-        "$CHROOT/etc/systemd/system/multi-user.target.wants/ps5boost.service"
-fi
+case "$DISTRO" in
+    alpine)
+        # Alpine ships ps5fan/ps5boost via the OpenRC path in
+        # post-files actions of its image.yaml; skip the systemd drop.
+        :
+        ;;
+    devuan*)
+        # Devuan is sysvinit. Drop /etc/init.d scripts and enable them
+        # with update-rc.d during chroot below. The actual update-rc.d
+        # call happens in image.yaml post-packages for the distro-built
+        # units (ssh, NM, etc.) — for ps5fan/ps5boost we wire them up
+        # here since they're staged outside the distrobuilder flow.
+        cat > "$CHROOT/etc/init.d/ps5fan" <<'PS5FAN_SYSV'
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ps5fan
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: PS5 fan control
+### END INIT INFO
+case "$1" in
+    start) [ -e /dev/icc ] && /usr/local/sbin/ps5_control --fan on ;;
+    stop)  [ -e /dev/icc ] && /usr/local/sbin/ps5_control --fan off ;;
+    restart|force-reload) $0 stop; $0 start ;;
+esac
+exit 0
+PS5FAN_SYSV
+        cat > "$CHROOT/etc/init.d/ps5boost" <<'PS5BOOST_SYSV'
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ps5boost
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: PS5 CPU/GPU boost mode
+### END INIT INFO
+case "$1" in
+    start) [ -e /dev/mp1 ] && /usr/local/sbin/ps5_control --boost on ;;
+    stop)  [ -e /dev/mp1 ] && /usr/local/sbin/ps5_control --boost off ;;
+    restart|force-reload) $0 stop; $0 start ;;
+esac
+exit 0
+PS5BOOST_SYSV
+        chmod +x "$CHROOT/etc/init.d/ps5fan" "$CHROOT/etc/init.d/ps5boost"
+        # update-rc.d may not be on PATH outside the chroot; run inside.
+        chroot "$CHROOT" /usr/sbin/update-rc.d ps5fan defaults  >/dev/null 2>&1 || true
+        chroot "$CHROOT" /usr/sbin/update-rc.d ps5boost defaults >/dev/null 2>&1 || true
+        ;;
+    artix*)
+        # Artix is OpenRC. Drop /etc/init.d openrc-run scripts and
+        # rc-update them into the default runlevel.
+        cat > "$CHROOT/etc/init.d/ps5fan" <<'PS5FAN_OPENRC'
+#!/sbin/openrc-run
+description="PS5 fan control"
+depend() { need localmount; after dev-settle; }
+start() {
+    [ -e /dev/icc ] || { ebegin "PS5 fan: /dev/icc missing"; eend 0; return 0; }
+    ebegin "Enabling PS5 fan control"
+    /usr/local/sbin/ps5_control --fan on
+    eend $?
+}
+stop() {
+    [ -e /dev/icc ] || return 0
+    ebegin "Disabling PS5 fan control"
+    /usr/local/sbin/ps5_control --fan off
+    eend $?
+}
+PS5FAN_OPENRC
+        cat > "$CHROOT/etc/init.d/ps5boost" <<'PS5BOOST_OPENRC'
+#!/sbin/openrc-run
+description="PS5 CPU/GPU boost mode"
+depend() { need localmount; after dev-settle; }
+start() {
+    [ -e /dev/mp1 ] || { ebegin "PS5 boost: /dev/mp1 missing"; eend 0; return 0; }
+    ebegin "Enabling PS5 boost mode"
+    /usr/local/sbin/ps5_control --boost on
+    eend $?
+}
+stop() {
+    [ -e /dev/mp1 ] || return 0
+    ebegin "Disabling PS5 boost mode"
+    /usr/local/sbin/ps5_control --boost off
+    eend $?
+}
+PS5BOOST_OPENRC
+        chmod +x "$CHROOT/etc/init.d/ps5fan" "$CHROOT/etc/init.d/ps5boost"
+        chroot "$CHROOT" /sbin/rc-update add ps5fan default  >/dev/null 2>&1 || true
+        chroot "$CHROOT" /sbin/rc-update add ps5boost default >/dev/null 2>&1 || true
+        ;;
+    *)
+        # systemd distros: drop the service files and enable them.
+        install -Dm644 "$PS5TOOLS_DIR/systemd/ps5fan.service" \
+            "$CHROOT/etc/systemd/system/ps5fan.service"
+        install -Dm644 "$PS5TOOLS_DIR/systemd/ps5boost.service" \
+            "$CHROOT/etc/systemd/system/ps5boost.service"
+        mkdir -p "$CHROOT/etc/systemd/system/multi-user.target.wants"
+        ln -sf ../ps5fan.service \
+            "$CHROOT/etc/systemd/system/multi-user.target.wants/ps5fan.service"
+        ln -sf ../ps5boost.service \
+            "$CHROOT/etc/systemd/system/multi-user.target.wants/ps5boost.service"
+        ;;
+esac
 rm -rf "$PS5TOOLS_DIR"
 
 # --- Alpine kernel gap: no kernel installed via image.yaml ---
