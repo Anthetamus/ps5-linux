@@ -438,8 +438,20 @@ SVC
             # repos already work inside the airootfs (it's a fully
             # functional rootfs the live env runs on).
             ARTIX_INIT="${ARTIX_INIT:-openrc}"
-            ARTIX_BUILD="${ARTIX_BUILD:-20260402}"
-            ARTIX_URL="${ARTIX_URL:-https://mirror1.artixlinux.org/iso/artix-base-${ARTIX_INIT}-${ARTIX_BUILD}-x86_64.iso}"
+            # Artix only keeps a small window of dated ISO builds online; the
+            # mirror prunes older ones, so hardcoding ARTIX_BUILD bitrots fast.
+            # Scrape the mirror index for the newest matching ISO instead.
+            if [ -z "${ARTIX_URL:-}" ]; then
+                ARTIX_INDEX="https://mirror1.artixlinux.org/iso/"
+                ARTIX_BUILD=$(curl -fsSL "$ARTIX_INDEX" \
+                    | grep -oE "artix-base-${ARTIX_INIT}-[0-9]{8}-x86_64\.iso" \
+                    | sort -u | tail -1 \
+                    | grep -oE "[0-9]{8}")
+                [ -n "$ARTIX_BUILD" ] || { echo "ERROR: no Artix $ARTIX_INIT ISO on mirror"; exit 1; }
+                ARTIX_URL="${ARTIX_INDEX}artix-base-${ARTIX_INIT}-${ARTIX_BUILD}-x86_64.iso"
+            else
+                ARTIX_BUILD=$(echo "$ARTIX_URL" | grep -oE "[0-9]{8}")
+            fi
 
             echo "=== Artix: locate / download $ARTIX_INIT build $ARTIX_BUILD ==="
             CACHED="/build/cache/artix-base-${ARTIX_INIT}-${ARTIX_BUILD}-x86_64.iso"
@@ -532,7 +544,7 @@ SVC
                 pacman -S --noconfirm --needed --overwrite '*' \
                     sway swaybg swayidle swaylock waybar foot wofi \
                     xdg-desktop-portal-wlr xorg-xwayland \
-                    greetd greetd-tuigreet \
+                    greetd \
                     mesa vulkan-radeon libva-mesa-driver \
                     libinput xkeyboard-config \
                     pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils \
