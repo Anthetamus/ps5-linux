@@ -1,8 +1,8 @@
 image:
-  name: ps5-devuan-xfce
+  name: ps5-devuan-sway
   distribution: devuan
   release: excalibur
-  description: Devuan 6 Excalibur XFCE desktop (sysvinit)
+  description: Devuan 6 Excalibur with sway (Wayland, sysvinit)
   architecture: x86_64
 
 source:
@@ -472,16 +472,21 @@ packages:
     - elogind
     - libpam-elogind
 
-    # Desktop (XFCE) — same set as debian13-xfce.
-    - xfce4
-    - xfce4-terminal
-    - xfce4-goodies
-    - lightdm
-    - lightdm-gtk-greeter
-    - thunar
+    # Desktop: sway (Wayland tiling WM) + greetd for autologin
+    - sway
+    - swaybg
+    - swayidle
+    - swaylock
+    - waybar
+    - foot
+    - wofi
+    - xdg-desktop-portal-wlr
+    - xwayland
+    - greetd
+    - greetd-tuigreet
 
-    # Display / GPU
-    - xorg
+    # Display / GPU — keep mesa-vulkan + amdgpu firmware; drop the xorg
+    # server itself (sway is Wayland-native, xwayland handles X clients).
     - mesa-vulkan-drivers
     - libdrm-amdgpu1
     - xserver-xorg-video-amdgpu
@@ -1361,14 +1366,18 @@ actions:
     # sysv-rc: update-rc.d defaults adds links into /etc/rc{2-5}.d
     update-rc.d ssh defaults || true
 
-    # LightDM autologin — set in the standard config; sysv-rc enable.
-    mkdir -p /etc/lightdm/lightdm.conf.d
-    cat > /etc/lightdm/lightdm.conf.d/50-autologin.conf <<LIGHTDM
-    [Seat:*]
-    autologin-user=ps5
-    autologin-user-timeout=0
-    LIGHTDM
-    update-rc.d lightdm defaults || true
+    # greetd: autologin ps5, launch sway immediately. No display manager,
+    # no display server selection — single Wayland session.
+    mkdir -p /etc/greetd
+    cat > /etc/greetd/config.toml <<GREETD
+    [terminal]
+    vt = 1
+
+    [default_session]
+    command = "sway"
+    user = "ps5"
+    GREETD
+    update-rc.d greetd defaults || true
 
     # NetworkManager + elogind under sysv
     update-rc.d network-manager defaults || true

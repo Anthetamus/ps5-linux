@@ -520,15 +520,13 @@ SVC
                 # Refresh package DBs against current mirrors.
                 pacman -Syy --noconfirm
 
-                # Install desktop + media + networking + utils. XFCE on
-                # OpenRC is the most reliable Artix DE; lightdm is the
-                # standard greeter.
+                # Desktop: sway (Wayland tiling WM) + greetd autologin.
+                # No X server — xwayland alone handles legacy X11 clients.
                 pacman -S --noconfirm --needed --overwrite '*' \
-                    xfce4 xfce4-goodies xfce4-terminal thunar \
-                    lightdm lightdm-gtk-greeter lightdm-openrc \
-                    xorg xorg-xinit \
+                    sway swaybg swayidle swaylock waybar foot wofi \
+                    xdg-desktop-portal-wlr xorg-xwayland \
+                    greetd greetd-tuigreet \
                     mesa vulkan-radeon libva-mesa-driver \
-                    xf86-video-amdgpu xorg-server xorg-xwayland \
                     libinput xkeyboard-config \
                     pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils \
                     networkmanager networkmanager-openrc network-manager-applet \
@@ -567,7 +565,7 @@ SVC
                 rc-update add seatd default       || true
                 rc-update add NetworkManager default || true
                 rc-update add sshd default        || true
-                rc-update add lightdm default     || true
+                rc-update add greetd default      || true
                 rc-update add grow-rootfs default || true
 
                 # Default user (ps5 / ps5)
@@ -578,13 +576,17 @@ SVC
                 passwd -l root
                 echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
 
-                # LightDM autologin
-                mkdir -p /etc/lightdm
-                if ! grep -q '^autologin-user' /etc/lightdm/lightdm.conf 2>/dev/null; then
-                    sed -i '/^\[Seat:\*\]/a autologin-user=ps5\nautologin-user-timeout=0' \
-                        /etc/lightdm/lightdm.conf || true
-                fi
-                # XFCE auto-start on the autologin session is lightdm-default.
+                # greetd: autologin ps5 -> exec sway. Single Wayland session,
+                # no display manager UI.
+                mkdir -p /etc/greetd
+                cat > /etc/greetd/config.toml <<GREETD
+[terminal]
+vt = 1
+
+[default_session]
+command = "sway"
+user = "ps5"
+GREETD
 
                 # amdgpu options — PS5 Oberon GPU needs dpm disabled.
                 mkdir -p /etc/modprobe.d
