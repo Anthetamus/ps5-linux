@@ -443,7 +443,7 @@ SVC
             # Scrape the mirror index for the newest matching ISO instead.
             if [ -z "${ARTIX_URL:-}" ]; then
                 ARTIX_INDEX="https://mirror1.artixlinux.org/iso/"
-                ARTIX_BUILD=$(curl -fsSL "$ARTIX_INDEX" \
+                ARTIX_BUILD=$(wget -q -O - "$ARTIX_INDEX" \
                     | grep -oE "artix-base-${ARTIX_INIT}-[0-9]{8}-x86_64\.iso" \
                     | sort -u | tail -1 \
                     | grep -oE "[0-9]{8}")
