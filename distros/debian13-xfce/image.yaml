@@ -32,6 +32,18 @@ packages:
     architectures:
     - amd64
 
+  # Debian Experimental: source of mesa 26.1+ which includes the GFX1013
+  # addrlib patch for the PS5 Oberon GPU (mesa < 26.1 lacks it and most
+  # games hit graphical glitches or black-screen on first frame; see
+  # upstream loader README §5). Pin sets priority low by default so only
+  # mesa-* packages are pulled from here; the rest of the system stays on
+  # trixie stable.
+  - name: experimental.list
+    url: |-
+      deb http://deb.debian.org/debian experimental main contrib non-free non-free-firmware
+    architectures:
+    - amd64
+
   sets:
   - packages:
     # Desktop
@@ -162,6 +174,19 @@ actions:
     set -eux
     rm -f /var/lib/apt/lists/*InRelease /var/lib/apt/lists/*Release /var/lib/apt/lists/*Packages* || true
     echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80retry
+    # Pin: only mesa-* packages come from Debian Experimental (priority
+    # 991 > stable's 990); everything else still resolves to trixie stable.
+    # Using printf so the pin file's content isn't dedented by YAML's
+    # block-scalar parsing.
+    printf '%s\n' \
+      'Package: mesa-* libgl1-mesa-* libegl-mesa* libegl-mesa0 libgbm1 libvulkan1' \
+      'Pin: release a=experimental' \
+      'Pin-Priority: 991' \
+      '' \
+      'Package: *' \
+      'Pin: release a=experimental' \
+      'Pin-Priority: 1' \
+      > /etc/apt/preferences.d/99-mesa-experimental.pref
     apt-get update
 
 - trigger: post-update
