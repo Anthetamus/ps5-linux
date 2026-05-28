@@ -491,6 +491,30 @@ AMDGPU
                 mkdir -p /boot/efi
                 cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
                 cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
+
+                # Suppress first-boot wizards. plasma-setup.service runs on every
+                # boot until /etc/plasma-setup-done exists, and its bootutil
+                # rewrites SDDM autologin to User=plasma-setup (clobbering our
+                # User=ps5) and starts the Plasma OOBE wizard, which prompts the
+                # user to create a fresh account. Our build pre-creates ps5; the
+                # wizard is unwanted.
+                touch /etc/plasma-setup-done
+                systemctl mask plasma-setup.service 2>/dev/null || true
+
+                # bazzite-hardware-setup.service runs on every boot until the
+                # marker files in /etc/bazzite/ match the image-info.json. Seed
+                # them so the script exits at its early-return; also mask it
+                # outright since the script calls `rpm-ostree kargs` which fails
+                # against our masked rpm-ostreed. The script's other work
+                # (zram, IOMMU karg, hw-specific kargs) isn't applicable on PS5
+                # anyway — we set our own cmdline in /boot/efi/cmdline.txt.
+                mkdir -p /etc/bazzite
+                jq -r '."image-name"'     < /usr/share/ublue-os/image-info.json > /etc/bazzite/image_name
+                jq -r '."image-branch"'   < /usr/share/ublue-os/image-info.json > /etc/bazzite/image_branch
+                jq -r '."fedora-version"' < /usr/share/ublue-os/image-info.json > /etc/bazzite/fedora_version
+                grep -oP '^HWS_VER=\K[0-9]+' /usr/libexec/bazzite-hardware-setup > /etc/bazzite/hws_version
+                systemctl mask bazzite-hardware-setup.service 2>/dev/null || true
+
                 # User setup. Bazzite exposes video/audio/input/render via
                 # systemd-userdbd, so `getent group video` returns a row —
                 # and `groupadd -f` short-circuits as "already exists" and
