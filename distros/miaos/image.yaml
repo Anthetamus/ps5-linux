@@ -297,12 +297,18 @@ actions:
     # /usr/local/bin/gaming-mode + desktop-mode: write the new mode,
     # then kill the current session — getty re-autologins and starts
     # the requested one. Both are sudo-NOPASSWD via the wheel rule.
+    # NOTE: pkill -KILL <name> (without -f) matches the kernel comm field,
+    # which gamescope rewrites at runtime via prctl(PR_SET_NAME) to
+    # "gamescope-wl". `pkill gamescope` therefore misses the actual process
+    # and the session never terminates — the next-mode session never starts
+    # and Steam's "Switch to Desktop" appears to hang. Use -f (matches full
+    # command line) to catch gamescope, gamescope-wl, gamescopereaper, every
+    # steam child, every plasma child regardless of their runtime renaming.
     cat > /usr/local/bin/desktop-mode <<'EOF'
     #!/bin/sh
     # Switch miaos to KDE Plasma desktop session.
     sudo sh -c 'echo desktop > /etc/ps5-mode'
-    sudo pkill -KILL -u gamer gamescope 2>/dev/null
-    sudo pkill -KILL -u gamer steam 2>/dev/null
+    sudo pkill -KILL -u gamer -f 'gamescope|steam' 2>/dev/null
     EOF
     chmod 755 /usr/local/bin/desktop-mode
 
@@ -310,9 +316,7 @@ actions:
     #!/bin/sh
     # Switch miaos back to gamescope + Steam Big Picture.
     sudo sh -c 'echo gaming > /etc/ps5-mode'
-    sudo pkill -KILL -u gamer plasma_session 2>/dev/null
-    sudo pkill -KILL -u gamer kwin_wayland 2>/dev/null
-    sudo pkill -KILL -u gamer startplasma-wayland 2>/dev/null
+    sudo pkill -KILL -u gamer -f 'startplasma|kwin_wayland|plasmashell' 2>/dev/null
     EOF
     chmod 755 /usr/local/bin/gaming-mode
 
