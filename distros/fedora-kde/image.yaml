@@ -192,6 +192,24 @@ actions:
     # versionlock the PS5 kernel so `dnf upgrade` doesn't replace it.
     dnf install -y python3-dnf-plugin-versionlock
     dnf versionlock add linux-ps5 || true
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    # Pre-configure repo.etawen.dev (mia's signed kernel repo) so users get
+    # linux-ps5 updates via dnf upgrade after first boot. Per-package gpgcheck
+    # is off because alien-converted RPMs are not per-package signed; the
+    # repodata IS signed (repo_gpgcheck=1).
+    set -eux
+    cat > /etc/yum.repos.d/etawen-ps5.repo <<EOF
+    [etawen-ps5]
+    name=Etawen PS5 kernel repo
+    baseurl=https://repo.etawen.dev/rpm/
+    enabled=1
+    gpgcheck=0
+    repo_gpgcheck=1
+    gpgkey=https://repo.etawen.dev/key.asc
+    EOF
+
 
 files:
 - name: hostname

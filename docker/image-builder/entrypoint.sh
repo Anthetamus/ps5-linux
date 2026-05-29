@@ -563,6 +563,19 @@ SVC
                 pacman -U --noconfirm --overwrite '*' /var/cache/ps5-pkgs/*.pkg.tar.zst
                 rm -rf /var/cache/ps5-pkgs
 
+                # Pre-configure repo.etawen.dev so users can `pacman -Syu`
+                # for kernel updates after first boot.
+                curl -fsSL https://repo.etawen.dev/key.asc | pacman-key --add - 2>/dev/null || true
+                pacman-key --lsign-key E40FB2409C9AD5243762294293AB12C4159FEDAB 2>/dev/null || true
+                if ! grep -q "^\[ps5\]" /etc/pacman.conf; then
+                    cat >> /etc/pacman.conf <<ETAWEN
+
+[ps5]
+SigLevel = Required DatabaseRequired
+Server = https://repo.etawen.dev/arch
+ETAWEN
+                fi
+
                 # mkinitcpio: drop autodetect so the initramfs covers the
                 # PS5's hardware, not the build host's (matches the arch
                 # path's recipe).
@@ -709,6 +722,20 @@ ARTIX_IN
                 rm -rf /lib/modules/*
                 rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
+
+                # Pre-configure repo.etawen.dev so users can
+                # `dnf upgrade linux-ps5` after first boot. Per-package
+                # gpgcheck=0 (alien-converted RPMs aren't per-package
+                # signed); repodata IS signed by the mia PGP key.
+                cat > /etc/yum.repos.d/etawen-ps5.repo <<ETAWEN
+[etawen-ps5]
+name=Etawen PS5 kernel repo
+baseurl=https://repo.etawen.dev/rpm/
+enabled=1
+gpgcheck=0
+repo_gpgcheck=1
+gpgkey=https://repo.etawen.dev/key.asc
+ETAWEN
                 # amdgpu options — PS5 Oberon GPU needs dpm disabled or HDMI
                 # stays dark. Must land in initramfs (amdgpu loads early).
                 mkdir -p /etc/modprobe.d

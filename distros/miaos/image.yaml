@@ -523,6 +523,23 @@ actions:
     # complains every Syu. Insert directly after the [options] header.
     sed -i '/^IgnorePkg/d' /etc/pacman.conf
     sed -i '/^\[options\]/a IgnorePkg = linux-ps5' /etc/pacman.conf
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    # Pre-configure repo.etawen.dev (mia's signed kernel repo) so users get
+    # linux-ps5 updates via pacman -Syu after first boot.
+    set -eux
+    curl -fsSL https://repo.etawen.dev/key.asc | pacman-key --add -
+    pacman-key --lsign-key E40FB2409C9AD5243762294293AB12C4159FEDAB
+    if ! grep -q "^\[ps5\]" /etc/pacman.conf; then
+        cat >> /etc/pacman.conf <<EOF
+
+    [ps5]
+    SigLevel = Required DatabaseRequired
+    Server = https://repo.etawen.dev/arch
+    EOF
+    fi
+
 
 mappings:
   architecture_map: archlinux

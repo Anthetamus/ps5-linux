@@ -201,6 +201,20 @@ actions:
 
     # Hold linux-ps5 against upstream replacement.
     apt-mark hold linux-ps5 || true
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    # Pre-configure repo.etawen.dev (mia's signed kernel repo) so users get
+    # linux-ps5 updates via apt-get upgrade after first boot.
+    set -eux
+    install -d -m 755 /etc/apt/keyrings
+    curl -fsSL https://repo.etawen.dev/key.asc \
+        | gpg --dearmor -o /etc/apt/keyrings/etawen-ps5.gpg
+    chmod 644 /etc/apt/keyrings/etawen-ps5.gpg
+    cat > /etc/apt/sources.list.d/etawen-ps5.list <<EOF
+    deb [signed-by=/etc/apt/keyrings/etawen-ps5.gpg] https://repo.etawen.dev/deb ./
+    EOF
+
 
 mappings:
   architecture_map: debian
