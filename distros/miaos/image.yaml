@@ -375,6 +375,82 @@ actions:
     Terminal=false
     Categories=Game;
     X-GNOME-Autostart-enabled=true
+    X-KDE-AutostartPhase=1
+    EOF
+
+    # KDE polish — fires before the first session so the user lands straight
+    # in Steam BPM with no splash flash and no idle dim/sleep.
+    cat > /home/gamer/.config/ksplashrc <<'EOF'
+    [KSplash]
+    Engine=none
+    Theme=None
+    EOF
+
+    cat > /home/gamer/.config/powermanagementprofilesrc <<'EOF'
+    [AC][DPMSControl]
+    idleTime=-1
+    lockBeforeTurnOff=0
+
+    [AC][DimDisplay]
+    idleTime=-1
+
+    [AC][SuspendSession]
+    idleTime=-1
+    suspendType=0
+
+    [AC][HandleButtonEvents]
+    lidAction=0
+    powerButtonAction=16
+    powerDownAction=16
+    triggerLidActionWhenExternalMonitorPresent=false
+
+    [Battery][DPMSControl]
+    idleTime=-1
+    [Battery][DimDisplay]
+    idleTime=-1
+    [Battery][SuspendSession]
+    idleTime=-1
+    [LowBattery][DPMSControl]
+    idleTime=-1
+    [LowBattery][DimDisplay]
+    idleTime=-1
+    [LowBattery][SuspendSession]
+    idleTime=-1
+    EOF
+
+    cat > /home/gamer/.config/kscreenlockerrc <<'EOF'
+    [Daemon]
+    Autolock=false
+    LockOnResume=false
+    Timeout=0
+    EOF
+
+    # KWin window rule: force Steam (wmclass=steam) fullscreen + above,
+    # so plasmashell isn't visible behind it during the Steam splash window.
+    cat > /home/gamer/.config/kwinrulesrc <<'EOF'
+    [General]
+    count=1
+    rules=steam-bpm-1
+
+    [steam-bpm-1]
+    Description=Steam Big Picture fullscreen
+    fullscreen=true
+    fullscreenrule=2
+    above=true
+    aboverule=2
+    wmclass=steam
+    wmclasscomplete=false
+    wmclassmatch=1
+    types=1
+    EOF
+
+    # Silence the bouncing-cursor app-launch feedback while Steam is starting.
+    cat > /home/gamer/.config/klaunchrc <<'EOF'
+    [BusyCursorSettings]
+    Bell=false
+    Blinking=false
+    Bouncing=false
+    TaskbarButton=false
     EOF
 
     chown -R gamer:gamer /home/gamer
