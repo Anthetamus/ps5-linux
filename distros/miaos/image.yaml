@@ -169,6 +169,20 @@ actions:
     set -eux
     fc-cache -f 2>/dev/null || true
 
+    # Ensure gcc-libs / libstdc++ are at the same version as the gamescope
+    # and Steam binaries shipped by cachyos/arch. CachyOS publishes
+    # gamescope linked against the newest libstdc++.so.6 (GLIBCXX_3.4.35+)
+    # but the bootstrap pacman -S step often resolves an older gcc-libs
+    # snapshot during the image build, producing a "GLIBCXX_3.4.35 not
+    # found" runtime error and a tty1 respawn loop on first boot.
+    #
+    # Force-refresh just these two (plus their lib32 counterparts) without
+    # doing a full -Syu, which would pull in CachyOS *-v3 glibc/pacman
+    # variants that break QEMU image-build hooks.
+    pacman -Syy --noconfirm
+    pacman -S --noconfirm --needed       gcc-libs libstdc++ lib32-gcc-libs lib32-libstdc++ || true
+
+
     symlink_wants() {
       local src=$1
       local target=$2
