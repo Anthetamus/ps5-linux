@@ -354,6 +354,25 @@ actions:
     Categories=System;
     EOF
 
+    # KDE desktop shortcut: when the user is in Plasma, give them a
+    # one-click way back into gamescope+Steam. The .desktop file lives
+    # in ~/Desktop/ so it shows up as an icon on the Plasma desktop
+    # view; +x and KIO trusted metadata bypass the "untrusted launcher"
+    # prompt that Plasma 6 shows for fresh-from-disk launchers.
+    mkdir -p /home/gamer/Desktop
+    cat > /home/gamer/Desktop/return-to-gaming-mode.desktop <<'EOF'
+    [Desktop Entry]
+    Type=Application
+    Version=1.0
+    Name=Return to Gaming Mode
+    Comment=Quit Plasma and re-launch gamescope + Steam Big Picture
+    Exec=steamos-session-select gaming
+    Icon=applications-games
+    Terminal=false
+    Categories=Game;System;
+    EOF
+    chmod +x /home/gamer/Desktop/return-to-gaming-mode.desktop
+
     chown -R gamer:gamer /home/gamer
 
     [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
