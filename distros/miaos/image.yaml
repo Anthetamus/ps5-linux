@@ -375,6 +375,55 @@ actions:
 
     chown -R gamer:gamer /home/gamer
 
+    # ---- SteamOS-compatibility stubs ----
+    # Steam Big Picture's "Switch to Desktop" button (and several other
+    # Deck-specific code paths) only invoke steamos-session-select / our
+    # mode-switch shim when Steam decides the host is a SteamOS-like
+    # environment. The detection looks at /etc/os-release (ID/VARIANT_ID)
+    # and the presence of /usr/bin/steamos-readonly. Without these the
+    # button does some "log off" fallback that just SIGKILLs Steam +
+    # gamescope — which on PS5 hardware causes the amdgpu DRM-master
+    # release to fail link training (perform_8b_10b_clock_recovery_sequence
+    # error, link 0 fails) and the display goes dark before any next
+    # session can come up.
+    #
+    # Keep the upstream /etc/os-release at /etc/os-release.arch in case
+    # any tool needs the real ID. Pacman & most package tooling care
+    # about ID_LIKE rather than ID, so set that to "arch" to keep them
+    # happy.
+    cp /etc/os-release /etc/os-release.arch
+    cat > /etc/os-release <<'EOF'
+    NAME="MiaOS"
+    PRETTY_NAME="MiaOS — SteamOS-compatible PS5"
+    ID=steamos
+    ID_LIKE="arch"
+    ANSI_COLOR="38;2;23;147;209"
+    BUILD_ID=rolling
+    VARIANT="Steam Deck"
+    VARIANT_ID=steamdeck
+    HOME_URL="https://etawen.dev/"
+    EOF
+
+    cat > /etc/lsb-release <<'EOF'
+    DISTRIB_ID=SteamOS
+    DISTRIB_RELEASE=rolling
+    DISTRIB_DESCRIPTION="MiaOS — SteamOS-compatible PS5"
+    EOF
+
+    cat > /usr/bin/steamos-readonly <<'EOF'
+    #!/bin/sh
+    # miaos stub: SteamOS distinguishes between read-only (atomic /usr)
+    # and rw modes. We are always rw. Some Steam paths check this binary
+    # exists and run it with status / enable / disable verbs.
+    case "${1:-status}" in
+        status) echo disabled ;;
+        enable|disable) ;;
+        *) echo "miaos-stub: unknown verb $1" >&2 ;;
+    esac
+    exit 0
+    EOF
+    chmod +x /usr/bin/steamos-readonly
+
     [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
     sed -i 's/ autodetect//' /etc/mkinitcpio.conf
 
