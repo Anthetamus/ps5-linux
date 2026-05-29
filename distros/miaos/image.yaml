@@ -283,6 +283,17 @@ actions:
                 # tester's TV actually accepts.
                 # --sdr-gamut-wideness 0 keeps the SDR colour space at sRGB;
                 # the PS5's internal DP→HDMI bridge can't translate BT.2020.
+                #
+                # Steam Big Picture inspects STEAMOS / STEAMDECK env vars to
+                # decide whether the Power-Menu Switch-to-Desktop button calls
+                # /usr/bin/steamos-session-select (our shim) or falls back to
+                # a plain quit/log-off. Without the markers it picks the quit
+                # fallback which kills gamescope and breaks DRM on PS5.
+                export STEAMOS=1
+                export STEAMDECK=1
+                export STEAM_USE_DYNAMIC_VRS=1
+                export STEAM_NIS=1
+                export SRT_URLOPEN_PREFER_STEAM=1
                 gamescope --backend drm -e --prefer-output DP-1 \
                     --sdr-gamut-wideness 0 \
                     -- steam -gamepadui -bigpicture
