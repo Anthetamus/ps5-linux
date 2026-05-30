@@ -117,7 +117,7 @@ jobs:
             echo "::endgroup::"
             if [ "$try" -lt 3 ]; then
               echo "::warning::attempt $try failed; wiping chroot + sleeping 30s before retry $((try+1))"
-              sudo rm -rf image/work/chroot
+              rm -rf image/work/chroot
               mkdir -p image/work/chroot
               sleep 30
             fi
