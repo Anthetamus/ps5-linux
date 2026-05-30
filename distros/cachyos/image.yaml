@@ -210,7 +210,11 @@ actions:
     # doing a full -Syu, which would pull in CachyOS *-v3 glibc/pacman
     # variants that break QEMU image-build hooks.
     pacman -Syy --noconfirm
-    pacman -S --noconfirm --needed       gcc-libs libstdc++ lib32-gcc-libs lib32-libstdc++ || true
+    # Drop --needed and lib32-libstdc++: --needed makes pacman skip when the
+    # bootstrap snapshot is "already installed" (even if older), which is
+    # exactly the case we are trying to defeat. lib32-libstdc++ does not
+    # exist as a separate Arch package; lib32-gcc-libs provides libstdc++.
+    pacman -S --noconfirm gcc-libs libstdc++ lib32-gcc-libs || true
 
 
     symlink_wants() {
