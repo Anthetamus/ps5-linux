@@ -381,6 +381,25 @@ case "$1" in
 esac
 INITSHARE
             chmod +x "$CHROOT/etc/init.d/S07ps5share"
+
+            # First-boot defaults for /userdata/system/batocera.conf — set
+            # display.empty=1 so every system (PSP, PS1, PS2, PS3, PS4,
+            # Switch, etc) is visible in EmulationStation even before
+            # ROMs are loaded. S12 runs after S11share has populated
+            # /userdata. Idempotent: only sets a key if not already
+            # present, so the user remains free to flip it back.
+            cat > "$CHROOT/etc/init.d/S12ps5defaults" <<'INITDEF'
+#!/bin/sh
+case "$1" in
+    start|"")
+        CONF=/userdata/system/batocera.conf
+        [ -f "$CONF" ] || exit 0
+        grep -qE '^display\.empty=' "$CONF" || echo 'display.empty=1' >> "$CONF"
+        ;;
+esac
+INITDEF
+            chmod +x "$CHROOT/etc/init.d/S12ps5defaults"
+
             # Batocera ships root passwordless. Leave root usable (a lot of
             # Batocera scripts assume root) but ALSO add a ps5 user so the
             # release-page convention works.
