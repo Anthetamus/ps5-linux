@@ -29,6 +29,12 @@ Pre-built `.img.xz` files for every distro below are published on the [`latest`]
 
 Default credentials on every image: user `ps5` / password `ps5` (sudo enabled, root locked). CachyOS uses `steam` / `steam`. Bazzite-Deck boots straight into the gamescope session.
 
+### Batocera notes
+
+- **Exit-game hotkey**: `Share` + `PS` on the DualSense (the in-game combo for "quit emulator"). Other Batocera combos use the PS button as the hotkey modifier.
+- Bundled emulators (Batocera 43): PSP (PPSSPP), PS1 (DuckStation), PS2 (PCSX2), PS3 (RPCS3), PS4 (shadPS4), Switch (Ryujinx — Yuzu was DMCA'd in 2024 and removed from every distro), plus the standard retroarch lineup (NES/SNES/Genesis/N64/GameCube/Wii/etc).
+- A system only appears in EmulationStation when it has at least one ROM under `/userdata/roms/<system>/`. Drop one file per system or set `display.empty=1` in `/userdata/system/batocera.conf` to force them all visible.
+
 ## Prerequisites
 
 - Docker (with permission to run `--privileged` containers) — install as per your distro's instructions
