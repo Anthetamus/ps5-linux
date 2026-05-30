@@ -18,7 +18,6 @@
 #   --no-publish if neither is present.
 
 set -euo pipefail
-[ "$EUID" = 0 ] || { echo "needs root (loop mount + chroot)" >&2; exit 1; }
 
 REPO="${REPO:-mia/ps5-linux-image}"
 SERVER="${SERVER:-https://git.etawen.dev}"
@@ -47,6 +46,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ "${#DISTROS[@]}" -gt 0 ] || { echo "no distro given. see --help" >&2; exit 2; }
+[ "$EUID" = 0 ] || { echo "needs root (loop mount + chroot)" >&2; exit 1; }
 
 TOKEN="${FORGEJO_TOKEN:-}"
 if [ -z "$TOKEN" ] && [ -r "${SUDO_USER:+/home/$SUDO_USER}/.mia_forgejo_token" ]; then
