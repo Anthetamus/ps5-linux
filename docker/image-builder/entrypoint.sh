@@ -474,6 +474,21 @@ SVC
 
             echo "=== Artix: locate / download $ARTIX_INIT build $ARTIX_BUILD ==="
             CACHED="/build/cache/artix-base-${ARTIX_INIT}-${ARTIX_BUILD}-x86_64.iso"
+            # Validate cached ISO against the mirror's Content-Length. Without
+            # this, a previous run that died mid-download (curl/wget killed,
+            # disk full, etc) leaves a truncated file at $CACHED — the next
+            # run sees it's non-zero, skips the download, and silently fails
+            # later at unsquashfs / mount-loop. Re-download if short.
+            if [ -s "$CACHED" ]; then
+                EXPECTED=$(wget -q -S --spider "$ARTIX_URL" 2>&1 \
+                    | awk 'tolower($1) == "content-length:" {print $2}' \
+                    | tail -1 | tr -d '\r')
+                ACTUAL=$(stat -c%s "$CACHED")
+                if [ -n "$EXPECTED" ] && [ "$ACTUAL" -lt "$EXPECTED" ]; then
+                    echo ">> Cached ISO is partial ($ACTUAL B < $EXPECTED B), discarding"
+                    rm -f "$CACHED"
+                fi
+            fi
             if [ ! -s "$CACHED" ]; then
                 echo ">> No cached ISO, downloading"
                 wget --tries=3 -O "$CACHED.part" "$ARTIX_URL"
