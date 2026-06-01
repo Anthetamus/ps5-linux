@@ -84,6 +84,8 @@ packages:
     - font-liberation
     - font-dejavu
     - fontconfig
+    - font-noto-cjk
+    - font-noto-emoji
     action: install
 
 files:

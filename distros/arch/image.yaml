@@ -77,6 +77,8 @@ packages:
     - ttf-dejavu
     - ttf-liberation
     - noto-fonts
+    - noto-fonts-cjk
+    - noto-fonts-emoji
     - ttf-font-awesome
     - fontconfig
     action: install

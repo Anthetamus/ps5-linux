@@ -106,6 +106,8 @@ packages:
     - curl
     - git
     - bash-completion
+    - fonts-noto-cjk
+    - fonts-noto-color-emoji
     action: install
 
 files:

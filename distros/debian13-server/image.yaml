@@ -88,6 +88,8 @@ packages:
     - libelf-dev
     - libssl-dev
     - libncurses-dev
+    - fonts-noto-cjk
+    - fonts-noto-color-emoji
     action: install
 
 files:
