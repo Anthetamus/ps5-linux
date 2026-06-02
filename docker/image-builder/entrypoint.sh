@@ -642,9 +642,12 @@ ETAWEN
                 rc-update add greetd default      || true
                 rc-update add grow-rootfs default || true
 
-                # Default user (ps5 / ps5)
+                # Default user (ps5 / ps5). plugdev is a Debian-ism not
+                # pre-created on Artix — the udev removable-device rules
+                # there target the `uucp`/`input` groups instead, so skip
+                # the missing group rather than fight it.
                 if ! id ps5 >/dev/null 2>&1; then
-                    useradd -m -s /bin/bash -G wheel,video,audio,input,seat,plugdev ps5
+                    useradd -m -s /bin/bash -G wheel,video,audio,input,seat ps5
                 fi
                 echo "ps5:ps5" | chpasswd
                 passwd -l root
