@@ -513,9 +513,11 @@ packages:
     - wpasupplicant
     - wireless-tools
     - iw
-    # No systemd-resolved on Devuan. resolvconf integrates NM with
-    # /etc/resolv.conf the sysv way.
-    - resolvconf
+    # No systemd-resolved on Devuan, and the `resolvconf` package's
+    # postinst fails inside distrobuilder's chroot (it tries to bind a
+    # tail file under /run/resolvconf/ that doesn't exist as a tmpfs).
+    # NetworkManager 1.28+ can manage /etc/resolv.conf as a plain file
+    # via rc-manager=file — no helper needed. Configured below.
 
     # System
     - dbus
@@ -1383,14 +1385,17 @@ actions:
     update-rc.d elogind defaults || true
     update-rc.d dbus defaults || true
 
-    # NetworkManager + resolvconf integration: NM writes through resolvconf
-    # to /etc/resolv.conf at runtime; no systemd-resolved stub on Devuan.
+    # NetworkManager manages /etc/resolv.conf directly as a plain file
+    # (rc-manager=file). No systemd-resolved on Devuan and we skip
+    # resolvconf because its postinst won't run in a distrobuilder chroot.
     mkdir -p /etc/NetworkManager/conf.d
-    cat > /etc/NetworkManager/conf.d/10-resolvconf.conf <<NM
+    cat > /etc/NetworkManager/conf.d/10-resolv.conf <<NM
     [main]
-    rc-manager=resolvconf
+    rc-manager=file
     dns=default
     NM
+    # Start with an empty file (NM will populate on first DHCP lease).
+    : > /etc/resolv.conf
 
 - trigger: post-files
   action: |-
