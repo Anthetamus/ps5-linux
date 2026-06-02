@@ -587,19 +587,19 @@ SVC
                     openssh openssh-openrc \
                     sudo bash nano vim htop wget curl git base-devel \
                     e2fsprogs parted gptfdisk \
-                    polkit dbus dbus-openrc seatd seatd-openrc \
+                    polkit dbus dbus-openrc seatd \
                     kexec-tools kmod \
                     ttf-dejavu ttf-liberation noto-fonts noto-fonts-cjk noto-fonts-emoji fontconfig \
                     linux-firmware \
                     || true
 
-                # The live ISO ships with the mainline `linux` kernel
-                # pre-installed; linux-ps5 conflicts with it at the package
-                # level (both Provides: KERNEL_NAME=linux). Force-remove with
-                # -Rdd (skip dependency checks; nothing depends on a kernel
-                # that won't boot on PS5 anyway). Ignore failure if `linux`
-                # is already gone on older ISO snapshots.
-                pacman -Rdd --noconfirm linux 2>/dev/null || true
+                # The live ISO ships the mainline `linux` kernel + headers
+                # pre-installed; linux-ps5 conflicts with both at the
+                # package level. Force-remove with -Rdd (skip dependency
+                # checks; nothing depending on /boot/vmlinuz-linux can run
+                # on PS5 hardware anyway). Ignore failure if either is
+                # already gone on older ISO snapshots.
+                pacman -Rdd --noconfirm linux linux-headers 2>/dev/null || true
 
                 # Install our patched kernel + modules.
                 pacman -U --noconfirm --overwrite '*' /var/cache/ps5-pkgs/*.pkg.tar.zst
