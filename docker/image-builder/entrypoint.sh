@@ -503,7 +503,7 @@ SVC
             # /arch/x86_64/airootfs.sfs (current) or /arch/boot/x86_64/
             # (older). Probe both.
             ARTIX_SFS=""
-            for c in /arch/x86_64/airootfs.sfs /arch/boot/x86_64/airootfs.sfs /LiveOS/squashfs.img; do
+            for c in /arch/x86_64/airootfs.sfs /arch/boot/x86_64/airootfs.sfs /LiveOS/rootfs.img /LiveOS/squashfs.img; do
                 [ -f "$ARTIX_MNT$c" ] && ARTIX_SFS="$ARTIX_MNT$c" && break
             done
             if [ -z "$ARTIX_SFS" ]; then
