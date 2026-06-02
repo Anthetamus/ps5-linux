@@ -599,7 +599,7 @@ SVC
                 # checks; nothing depending on /boot/vmlinuz-linux can run
                 # on PS5 hardware anyway). Ignore failure if either is
                 # already gone on older ISO snapshots.
-                pacman -Rdd --noconfirm linux linux-headers 2>/dev/null || true
+                pacman -Rdd --noconfirm linux linux-headers linux-api-headers 2>/dev/null || true
 
                 # Install our patched kernel + modules.
                 pacman -U --noconfirm --overwrite '*' /var/cache/ps5-pkgs/*.pkg.tar.zst
