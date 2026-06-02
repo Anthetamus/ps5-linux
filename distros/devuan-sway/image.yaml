@@ -522,6 +522,8 @@ packages:
     # System
     - dbus
     - openssh-server
+    - gnupg
+    - ca-certificates
     - sudo
     - initramfs-tools
     - kmod
@@ -1394,8 +1396,10 @@ actions:
     rc-manager=file
     dns=default
     NM
-    # Start with an empty file (NM will populate on first DHCP lease).
-    : > /etc/resolv.conf
+    # Don't truncate /etc/resolv.conf here — distrobuilder bind-mounts
+    # the host's file in for chroot DNS, and truncating breaks the
+    # later post-files actions that hit the network. NM will overwrite
+    # it cleanly on the first DHCP lease after boot.
 
 - trigger: post-files
   action: |-
