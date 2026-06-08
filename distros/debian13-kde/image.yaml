@@ -39,6 +39,7 @@ packages:
     - kde-plasma-desktop
     - plasma-nm
     - plasma-pa
+    - kdeplasma-addons
     - konsole
     - dolphin
     - systemsettings

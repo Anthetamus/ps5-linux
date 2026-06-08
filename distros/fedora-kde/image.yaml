@@ -32,6 +32,7 @@ packages:
       - plasma-workspace
       - plasma-nm
       - plasma-pa
+      - kdeplasma-addons
       - kde-settings-plasma
       - konsole
       - dolphin
