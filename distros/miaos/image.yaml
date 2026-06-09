@@ -74,6 +74,13 @@ packages:
     - breeze
     - breeze-gtk
     - xdg-desktop-portal-kde
+    - plasma-nm
+    - kdeplasma-addons
+
+    # Bluetooth (KDE applet + daemon + bluetoothctl)
+    - bluez
+    - bluez-utils
+    - bluedevil
 
     # Networking
     - networkmanager
@@ -198,6 +205,7 @@ actions:
     symlink_wants /usr/lib/systemd/system/sshd.service multi-user.target
     symlink_wants /usr/lib/systemd/system/NetworkManager.service multi-user.target
     symlink_wants /usr/lib/systemd/system/seatd.service multi-user.target
+    symlink_wants /usr/lib/systemd/system/bluetooth.service multi-user.target
     for s in pipewire pipewire-pulse wireplumber; do
       symlink_wants "/usr/lib/systemd/system/${s}.service" default.target || true
     done
