@@ -7,7 +7,7 @@ on:
         description: 'Which distros to build'
         default: 'ubuntu2604'
         type: choice
-        options: [all, ubuntu2604, mint22-cinnamon, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, alpine, fedora-gnome, fedora-kde, bazzite, bazzite-deck, batocera, artix-openrc, devuan-sway, miaos]
+        options: [all, ubuntu2604, mint22-cinnamon, debian13-xfce, debian13-server, debian13-gnome, debian13-kde, debian13-proxmox, arch, cachyos, alpine, fedora-gnome, fedora-kde, bazzite, bazzite-deck, batocera, artix-openrc, devuan-sway, miaos, artix-runit]
 
 jobs:
   image:

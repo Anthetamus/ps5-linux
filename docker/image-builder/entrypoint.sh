@@ -73,11 +73,20 @@ EOF
             ;;
         artix*)
             # Artix bootstraps from its live ISO (no upstream tarball);
-            # the only staged files are the OpenRC grow-rootfs pair and
-            # the linux-ps5 .pkg.tar.zst kernel. Everything else happens
-            # inside the chroot in the build case below.
-            cp /repo/distros/artix-openrc/grow-rootfs        "$STAGING/"
-            cp /repo/distros/artix-openrc/grow-rootfs.openrc "$STAGING/"
+            # the only staged files are the init-specific grow-rootfs
+            # pair and the linux-ps5 .pkg.tar.zst kernel. Pick the right
+            # variant by DISTRO name — openrc by default, runit when the
+            # distro is explicitly artix-runit.
+            case "$DISTRO" in
+                artix-runit)
+                    cp /repo/distros/artix-runit/grow-rootfs       "$STAGING/"
+                    cp /repo/distros/artix-runit/grow-rootfs.runit "$STAGING/"
+                    ;;
+                *)
+                    cp /repo/distros/artix-openrc/grow-rootfs        "$STAGING/"
+                    cp /repo/distros/artix-openrc/grow-rootfs.openrc "$STAGING/"
+                    ;;
+            esac
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                    "$STAGING/pkgs/"
             ;;
@@ -456,6 +465,10 @@ SVC
             # from the ISO and customize it in chroot. Pacman + Artix
             # repos already work inside the airootfs (it's a fully
             # functional rootfs the live env runs on).
+            case "$DISTRO" in
+                artix-runit) ARTIX_INIT="runit" ;;
+                artix-openrc) ARTIX_INIT="openrc" ;;
+            esac
             ARTIX_INIT="${ARTIX_INIT:-openrc}"
             # Artix only keeps a small window of dated ISO builds online; the
             # mirror prunes older ones, so hardcoding ARTIX_BUILD bitrots fast.
@@ -539,7 +552,16 @@ SVC
             mkdir -p "$CHROOT/var/cache/ps5-pkgs"
             cp "$STAGING/pkgs/"*.pkg.tar.zst "$CHROOT/var/cache/ps5-pkgs/"
             install -Dm755 "$STAGING/grow-rootfs"        "$CHROOT/usr/local/sbin/grow-rootfs"
-            install -Dm755 "$STAGING/grow-rootfs.openrc" "$CHROOT/etc/init.d/grow-rootfs"
+            case "$ARTIX_INIT" in
+                runit)
+                    install -Dm755 "$STAGING/grow-rootfs.runit" \
+                        "$CHROOT/etc/runit/1.d/grow-rootfs"
+                    ;;
+                *)
+                    install -Dm755 "$STAGING/grow-rootfs.openrc" \
+                        "$CHROOT/etc/init.d/grow-rootfs"
+                    ;;
+            esac
             # Pre-provisioned wifi (test builds only — strip before push).
             # NM requires mode 0600 on keyfiles; anything looser is silently
             # ignored.
@@ -561,7 +583,7 @@ SVC
             rm -f "$CHROOT/etc/resolv.conf"
             cp /etc/resolv.conf "$CHROOT/etc/resolv.conf"
 
-            chroot "$CHROOT" /bin/bash -e <<'ARTIX_IN'
+            chroot "$CHROOT" env ARTIX_INIT="$ARTIX_INIT" /bin/bash -e <<'ARTIX_IN'
                 # Pacman 7 Landlock sandbox is unsupported under QEMU/docker.
                 sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf 2>/dev/null || true
 
@@ -575,6 +597,9 @@ SVC
 
                 # Desktop: sway (Wayland tiling WM) + greetd autologin.
                 # No X server — xwayland alone handles legacy X11 clients.
+                # Per-init suffix for the Artix service-glue subpackages
+                # (NetworkManager-openrc vs -runit, etc.).
+                SFX="$ARTIX_INIT"
                 pacman -S --noconfirm --needed --overwrite '*' \
                     sway swaybg swayidle swaylock waybar foot wofi \
                     xdg-desktop-portal-wlr xorg-xwayland \
@@ -582,12 +607,12 @@ SVC
                     mesa vulkan-radeon libva-mesa-driver \
                     libinput xkeyboard-config \
                     pipewire pipewire-pulse pipewire-alsa wireplumber alsa-utils \
-                    networkmanager networkmanager-openrc network-manager-applet \
-                    elogind-openrc \
-                    openssh openssh-openrc \
+                    networkmanager networkmanager-$SFX network-manager-applet \
+                    elogind-$SFX \
+                    openssh openssh-$SFX \
                     sudo bash nano vim htop wget curl git base-devel \
                     e2fsprogs parted gptfdisk \
-                    polkit dbus dbus-openrc seatd \
+                    polkit dbus dbus-$SFX seatd \
                     kexec-tools kmod \
                     ttf-dejavu ttf-liberation noto-fonts noto-fonts-cjk noto-fonts-emoji fontconfig \
                     linux-firmware \
@@ -632,15 +657,27 @@ ETAWEN
                 sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
                 sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 
-                # OpenRC service wiring. The -openrc subpackages drop the
-                # init scripts; rc-update plugs them into runlevels.
-                rc-update add dbus default        || true
-                rc-update add elogind boot        || true
-                rc-update add seatd default       || true
-                rc-update add NetworkManager default || true
-                rc-update add sshd default        || true
-                rc-update add greetd default      || true
-                rc-update add grow-rootfs default || true
+                # Service wiring — branch by init system.
+                if [ "$ARTIX_INIT" = "runit" ]; then
+                    # Runit: each -runit subpackage drops /etc/runit/sv/<svc>/.
+                    # Activate by symlinking into the default runsvdir.
+                    mkdir -p /etc/runit/runsvdir/default
+                    for svc in dbus elogind seatd NetworkManager sshd greetd; do
+                        [ -d "/etc/runit/sv/$svc" ] && \
+                            ln -sfn "/etc/runit/sv/$svc" "/etc/runit/runsvdir/default/$svc"
+                    done
+                    # grow-rootfs is a one-shot stage-1 hook (installed by host
+                    # at /etc/runit/1.d/grow-rootfs) — no symlink needed.
+                else
+                    # OpenRC: -openrc subpackages drop /etc/init.d/<svc>; plug into runlevels.
+                    rc-update add dbus default        || true
+                    rc-update add elogind boot        || true
+                    rc-update add seatd default       || true
+                    rc-update add NetworkManager default || true
+                    rc-update add sshd default        || true
+                    rc-update add greetd default      || true
+                    rc-update add grow-rootfs default || true
+                fi
 
                 # Default user (ps5 / ps5). plugdev is a Debian-ism not
                 # pre-created on Artix — the udev removable-device rules
