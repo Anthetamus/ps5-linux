@@ -1146,8 +1146,42 @@ PS5BOOST_SYSV
         chroot "$CHROOT" /usr/sbin/update-rc.d ps5fan defaults  >/dev/null 2>&1 || true
         chroot "$CHROOT" /usr/sbin/update-rc.d ps5boost defaults >/dev/null 2>&1 || true
         ;;
+    artix-runit)
+        # Artix runit: drop runit service trees and symlink into the
+        # default runsvdir. Runit's run scripts are foreground-loop
+        # daemons; ps5fan/ps5boost are one-shots, so do the work then
+        # `exec pause` (or sleep infinity if no pause) to keep the
+        # supervisor happy.
+        mkdir -p "$CHROOT/etc/runit/sv/ps5fan"   "$CHROOT/etc/runit/sv/ps5boost"
+        mkdir -p "$CHROOT/etc/runit/runsvdir/default"
+
+        cat > "$CHROOT/etc/runit/sv/ps5fan/run" <<'PS5FAN_RUNIT'
+#!/bin/sh
+exec 2>&1
+if [ -e /dev/icc ]; then
+    /usr/local/sbin/ps5_control --fan on
+fi
+# Stay running so runsv keeps the service "up"; the one-shot effect is
+# already applied. `sleep infinity` is portable across busybox/coreutils.
+exec sleep infinity
+PS5FAN_RUNIT
+
+        cat > "$CHROOT/etc/runit/sv/ps5boost/run" <<'PS5BOOST_RUNIT'
+#!/bin/sh
+exec 2>&1
+if [ -e /dev/mp1 ]; then
+    /usr/local/sbin/ps5_control --boost on
+fi
+exec sleep infinity
+PS5BOOST_RUNIT
+
+        chmod +x "$CHROOT/etc/runit/sv/ps5fan/run" \
+                 "$CHROOT/etc/runit/sv/ps5boost/run"
+        ln -sfn /etc/runit/sv/ps5fan   "$CHROOT/etc/runit/runsvdir/default/ps5fan"
+        ln -sfn /etc/runit/sv/ps5boost "$CHROOT/etc/runit/runsvdir/default/ps5boost"
+        ;;
     artix*)
-        # Artix is OpenRC. Drop /etc/init.d openrc-run scripts and
+        # Artix OpenRC. Drop /etc/init.d openrc-run scripts and
         # rc-update them into the default runlevel.
         cat > "$CHROOT/etc/init.d/ps5fan" <<'PS5FAN_OPENRC'
 #!/sbin/openrc-run
