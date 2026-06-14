@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ps5-surgery — apply a structural fix to a previously-built PS5 image without
 # rebuilding from scratch. Designed for operator-driven tweaks on the minipc:
 # pull the latest published image, mount + chroot, edit, repack, re-publish.
