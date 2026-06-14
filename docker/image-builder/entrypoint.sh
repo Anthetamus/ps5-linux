@@ -818,46 +818,17 @@ gpgcheck=0
 repo_gpgcheck=1
 gpgkey=https://repo.etawen.dev/key.asc
 ETAWEN
-                # PS5-specific dracut overrides. Two real-world problems we
-                # hit when booting bazzite-deck on FLAVA3 PS5 hardware:
-                #
-                #  (1) bazzite's stock dracut config force-includes vfio,
-                #      vfio-pci, and vfio_iommu_type1 in the initramfs (it
-                #      ships with GPU-passthrough use cases in mind). On
-                #      PS5, vfio-pci can grab the Oberon GPU at
-                #      0000:20:00.0 before amdgpu's modalias fires, and
-                #      amdgpu's pci_probe then returns -EINVAL.
-                #
-                #  (2) If amdgpu itself lands in initramfs, it probes before
-                #      amd_atl (which only loads later via a CPU-feature
-                #      modalias). amdgpu's RAS init then sees no ATL and
-                #      bails the same way. Both miaos and the upstream
-                #      Arch path defer amdgpu until after switch_root and
-                #      it probes cleanly — so do the same here.
-                #
-                # We also intentionally do NOT write the historical
-                # `options amdgpu dpm=0 gpu_recovery=0` modprobe.d file.
-                # It was a workaround for older linux-ps5 amdgpu and is
-                # now actively harmful on CYAN_SKILLFISH (PS5 Oberon):
-                # disabling DPM at probe time triggers the -EINVAL we see
-                # on bazzite-deck. Default dpm=-1 works correctly on real
-                # PS5 hardware (confirmed live on miaos at .109/.50 — same
-                # kernel binary, no dpm override, amdgpu probe succeeds,
-                # display lights up).
-                mkdir -p /etc/dracut.conf.d
-                cat > /etc/dracut.conf.d/99-ps5.conf <<DRACUT
-omit_drivers+=" vfio vfio_iommu_type1 vfio-pci amdgpu "
-DRACUT
-
+                # amdgpu options — PS5 Oberon GPU needs dpm disabled or HDMI
+                # stays dark. Must land in initramfs (amdgpu loads early).
+                mkdir -p /etc/modprobe.d
+                cat > /etc/modprobe.d/ps5-amdgpu.conf <<AMDGPU
+options amdgpu dpm=0 gpu_recovery=0
+AMDGPU
                 # Build the initrd, then deploy bzImage+initrd to /boot/efi/
                 # for the PS5 kexec loader. (zz-update-boot is the deb-flow
                 # helper; bazzite never stages it, so we inline the copies.)
-                # --no-hostonly: don't tailor the initramfs to the build
-                # host's hardware (the runners are not AMD GPUs); we want
-                # a generic initramfs that works on PS5.
                 KVER=$(ls -1t /lib/modules | head -1)
-                dracut -f --no-hostonly --no-hostonly-cmdline \
-                    --kver "$KVER" "/boot/initrd.img-$KVER"
+                dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
                 mkdir -p /boot/efi
                 cp "/boot/vmlinuz-$KVER" /boot/efi/bzImage
                 cp "/boot/initrd.img-$KVER" /boot/efi/initrd.img
