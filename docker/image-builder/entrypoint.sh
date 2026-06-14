@@ -805,6 +805,33 @@ ARTIX_IN
                 rpm -Uvh --replacefiles --replacepkgs --nodeps /var/cache/ps5-rpms/*.rpm
                 rm -rf /var/cache/ps5-rpms
 
+                # cyan_skillfish (PS5 Oberon) GPU firmware MUST land in the
+                # rootfs uncompressed. The linux-ps5 amdgpu patches write into
+                # the request_firmware() buffer to skip Sony's signature header
+                # (gfx_v10_0_early_init + amdgpu_sdma_init_microcode). Firmware
+                # loaded from a .xz file is decompressed into pages the kernel
+                # maps PAGE_KERNEL_RO (fw_decompress_xz_pages -> fw_map_paged_buf
+                # -> vmap PAGE_KERNEL_RO), so the write oopses amdgpu at
+                # gfx_v10_0_early_init+0x415 and /dev/dri never appears.
+                # Distros that ship .zst (arch) or raw .bin (debian) decompress
+                # into writable buffers and are unaffected — this fix is for
+                # the rpm path only. linux-firmware dedupes blobs as symlinks
+                # (mec2 -> mec) and unxz refuses symlinks, so materialize the
+                # link targets first while the canonical .xz still exists.
+                # Upstream did this same fix in
+                # github.com/ps5-linux/ps5-linux-image@ed54e99 — same kernel
+                # patches, same firmware, same failure mode.
+                cd /usr/lib/firmware/amdgpu
+                for f in cyan_skillfish*.xz; do
+                    if [ -L "$f" ]; then
+                        tgt=$(readlink -f "$f")
+                        rm "$f"
+                        xz -dc "$tgt" > "${f%.xz}"
+                    fi
+                done
+                unxz cyan_skillfish*.xz
+                cd /
+
                 # Pre-configure repo.etawen.dev so users can
                 # `dnf upgrade linux-ps5` after first boot. Per-package
                 # gpgcheck=0 (alien-converted RPMs aren't per-package

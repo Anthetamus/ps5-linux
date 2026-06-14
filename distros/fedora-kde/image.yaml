@@ -150,6 +150,30 @@ actions:
     cat > /etc/modprobe.d/ps5-amdgpu.conf <<MODPROBE
     options amdgpu dpm=0 gpu_recovery=0
     MODPROBE
+    # cyan_skillfish (PS5 Oberon) GPU firmware must be uncompressed before
+    # dracut packs the initramfs. The linux-ps5 amdgpu patches write into
+    # the request_firmware() buffer to skip Sony's signature header
+    # (gfx_v10_0_early_init + amdgpu_sdma_init_microcode). Firmware loaded
+    # from .xz decompresses into pages mapped PAGE_KERNEL_RO, so the write
+    # oopses amdgpu at gfx_v10_0_early_init+0x415 and /dev/dri never
+    # appears. Distros with .zst (arch) or raw .bin (debian) decompress
+    # into writable buffers and are unaffected; Fedora ships .xz, so it
+    # gets a special-case here.
+    # linux-firmware dedupes blobs as symlinks (mec2 -> mec) and unxz
+    # refuses symlinks, so materialize the targets first.
+    # Upstream (github.com/ps5-linux/ps5-linux-image@ed54e99) ships the
+    # same fix.
+    (
+        cd /usr/lib/firmware/amdgpu
+        for f in cyan_skillfish*.xz; do
+            if [ -L "$f" ]; then
+                tgt=$(readlink -f "$f")
+                rm "$f"
+                xz -dc "$tgt" > "${f%.xz}"
+            fi
+        done
+        unxz cyan_skillfish*.xz
+    )
     # Explicit initrd path so zz-update-boot finds /boot/initrd.img-$KVER.
     dracut -f --kver "$KVER" "/boot/initrd.img-$KVER"
     /etc/kernel/postinst.d/zz-update-boot "$KVER"
