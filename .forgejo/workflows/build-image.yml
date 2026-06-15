@@ -102,27 +102,49 @@ jobs:
           ln -sfn /data/cache/ps5/linux       image/work/linux
           ln -sfn /data/cache/ps5/kernel-out  image/linux-bin
 
-      - name: Build ${{ matrix.distro }} image (retry x3 on transient pacman/apt mirror flakes)
+      - name: Build ${{ matrix.distro }} image (retry x5 with exponential backoff on transient pacman/apt mirror flakes)
         run: |
           set -u
           DISTRO="${{ matrix.distro }}"
           OK=0
-          for try in 1 2 3; do
+          # Tee build output to a host-side persistent log so failures stay
+          # inspectable after the build container `--rm`s away. Path is
+          # under /data which is bind-mounted into the runner from the host
+          # (host-side `/data/ci-logs/`). Successful builds delete their log
+          # at the end; failed ones are kept until the host's prune cron
+          # removes them (72h).
+          mkdir -p /data/ci-logs
+          TS=$(date -u +%Y%m%d-%H%M%S)
+          LOG="/data/ci-logs/${DISTRO}-${TS}.log"
+          echo "tee-ing build output to $LOG" | tee "$LOG"
+          # Exponential backoff between attempts: 30s, 60s, 120s, 240s.
+          # Total worst-case wait = 7.5 min — well under any reasonable mirror
+          # outage but long enough to clear a Cloudflare/CDN throttle window
+          # (the 24h alpine + ubuntu + debian + batocera overnight failures
+          # were all transient CDN flakes that 3x30s couldn't ride out).
+          SLEEPS="30 60 120 240"
+          for try in 1 2 3 4 5; do
             echo "::group::build attempt $try for $DISTRO"
-            if bash image/build_image.sh --distro "$DISTRO"; then
+            if bash image/build_image.sh --distro "$DISTRO" 2>&1 | tee -a "$LOG"; then
               OK=1
               echo "::endgroup::"
               break
             fi
             echo "::endgroup::"
-            if [ "$try" -lt 3 ]; then
-              echo "::warning::attempt $try failed; wiping chroot + sleeping 30s before retry $((try+1))"
+            if [ "$try" -lt 5 ]; then
+              S=$(echo "$SLEEPS" | cut -d' ' -f"$try")
+              echo "::warning::attempt $try failed; wiping chroot + sleeping ${S}s before retry $((try+1))"
               rm -rf image/work/chroot
               mkdir -p image/work/chroot
-              sleep 30
+              sleep "$S"
             fi
           done
-          [ "$OK" = 1 ] || { echo "::error::build failed after 3 attempts"; exit 1; }
+          if [ "$OK" = 1 ]; then
+            rm -f "$LOG"
+          else
+            echo "::error::build failed after 5 attempts — log retained at host:$LOG (72h)"
+            exit 1
+          fi
 
       - name: Set version info
         id: version
