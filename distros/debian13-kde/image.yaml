@@ -39,7 +39,9 @@ packages:
     - kde-plasma-desktop
     - plasma-nm
     - plasma-pa
-    - kdeplasma-addons
+    # `kdeplasma-addons` was renamed in Trixie (Plasma 6) to plasma-widgets-addons.
+    # The old name still exists as kdeplasma-addons-data (just locale files).
+    - plasma-widgets-addons
     - konsole
     - dolphin
     - systemsettings

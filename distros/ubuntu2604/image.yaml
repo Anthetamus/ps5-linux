@@ -79,6 +79,11 @@ packages:
     - firefox
     - openssh-server
     - build-essential
+    # Required by the post-files action that adds the etawen-ps5 apt repo —
+    # cloud-image-minimal Ubuntu doesn't ship curl, and the curl|gpg pipe
+    # silently fails ("no valid OpenPGP data found") without it.
+    - curl
+    - gnupg
     - network-manager
     - linux-firmware
     - initramfs-tools
