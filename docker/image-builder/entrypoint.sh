@@ -946,6 +946,30 @@ AMDGPU
                 # resolv.conf -> systemd-resolved stub
                 rm -f /etc/resolv.conf
                 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+                # Steam Deck UI's "Switch to Desktop" button calls SteamOS-
+                # Manager's SetTemporarySession(s) dbus method, which writes
+                # Session=<bare-alias> (literally "desktop"/"gamescope") into
+                # /etc/sddm.conf.d/zzt-steamos-temp-login.conf. That conf
+                # sorts AFTER zz-steamos-autologin.conf so it wins precedence
+                # at autologin time — but SDDM has no `desktop.desktop`
+                # session to resolve the alias to, so the button silently
+                # no-ops and the user stays on gamescope. (The bash
+                # steamos-session-select tool works fine because it resolves
+                # aliases itself before writing — only the dbus path is
+                # broken.) Fix it with alias symlinks SDDM can follow.
+                for cand in plasma-steamos-wayland-oneshot.desktop \
+                            gnome-wayland-oneshot.desktop plasma.desktop; do
+                    if [ -e "/usr/share/wayland-sessions/$cand" ]; then
+                        ln -sf "$cand" /usr/share/wayland-sessions/desktop.desktop
+                        break
+                    fi
+                done
+                for cand in gamescope-session.desktop gamescope-session-plus.desktop; do
+                    if [ -e "/usr/share/wayland-sessions/$cand" ]; then
+                        ln -sf "$cand" /usr/share/wayland-sessions/gamescope.desktop
+                        break
+                    fi
+                done
                 # Autologin straight into Bazzite's gamescope session (Steam
                 # Big-Picture / Deck UI) — Bazzite is gaming-focused, and a
                 # field report said it landed on the Plasma desktop instead
