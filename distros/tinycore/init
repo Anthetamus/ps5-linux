@@ -1,0 +1,83 @@
+#!/bin/sh
+# ps5-tinycore /init — direct-to-shell PS5 TinyCore.
+#
+# No TC rcS, no /sbin/init, no switch_root. Just:
+#  - mount kernel filesystems
+#  - modprobe everything required to drive PS5 hardware
+#  - reprobe HDMI connectors (DTM TA race workaround)
+#  - banner + busybox shell on tty1, getty on ttyS0
+
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs devtmpfs /dev
+mount -t tmpfs tmpfs /run
+mkdir -p /run/lock /tmp
+chmod 1777 /tmp
+
+# GPU stack. amdgpu pulls drm/ttm via builtin; cec is needed for
+# drm_display_helper (otherwise: "Unknown symbol cec_notifier_*").
+echo "[ps5-tc] modprobe cec / drm / amdgpu" > /dev/kmsg
+modprobe cec       2>/dev/kmsg
+modprobe drm       2>/dev/kmsg
+modprobe amdgpu    2>/dev/kmsg
+sleep 2
+
+# Input — USB keyboard/mouse + DualSense (via internal Bluetooth HID).
+echo "[ps5-tc] modprobe input + HID" > /dev/kmsg
+modprobe evdev           2>/dev/kmsg
+modprobe usbhid          2>/dev/kmsg
+modprobe hid-generic     2>/dev/kmsg
+modprobe hid-multitouch  2>/dev/kmsg
+modprobe hid-playstation 2>/dev/kmsg
+
+# USB mass storage.
+modprobe usb-storage     2>/dev/kmsg
+modprobe uas             2>/dev/kmsg
+
+# USB-Ethernet (common adapters).
+modprobe r8152           2>/dev/kmsg
+modprobe asix            2>/dev/kmsg
+modprobe ax88179_178a    2>/dev/kmsg
+modprobe cdc_ether       2>/dev/kmsg
+modprobe cdc_ncm         2>/dev/kmsg
+
+sleep 1
+
+# DTM TA race workaround — force connector re-enumeration.
+echo "[ps5-tc] DTM connector reprobe" > /dev/kmsg
+for c in /sys/class/drm/card*-*/status; do
+    [ -w "$c" ] && echo detect > "$c"
+done
+
+ip link set lo up 2>/dev/null
+hostname ps5-tc 2>/dev/null
+
+clear > /dev/tty1 2>/dev/null
+{
+    printf '\033[1;35m'
+    cat <<'BANNER'
+
+      ████ ████  ███████   █████  █████   █████ ████  ████
+      ████ ████  ██   ██  ██     ██   ██ ██     ████  ████
+      ████ ████  ██████   ██████ ██████  ██████ ████  ████
+      ████ ████  ██       ██   █ ██ ██   ██   █ ████  ████
+      ████ ████  ██        █████  ██  ██  █████ ████  ████
+
+                       T I N Y C O R E
+BANNER
+    printf '\033[0m\033[1;36m'
+    echo
+    echo "  linux-ps5 7.0.10 · TinyCore userspace · $(uname -m)"
+    printf '\033[0m\n'
+    echo "  poweroff / reboot to exit"
+    echo
+} > /dev/tty1
+
+# Serial getty (so a host PC plugged to the PS5's debug serial can also drive it).
+setsid /sbin/getty -L ttyS0 115200 vt100 2>/dev/null &
+
+# Foreground shell on tty1, respawn forever.
+while true; do
+    setsid -c /bin/sh </dev/tty1 >/dev/tty1 2>&1
+    sleep 1
+done

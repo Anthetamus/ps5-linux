@@ -1,0 +1,162 @@
+name: Build TinyCore
+run-name: Build TinyCore image
+
+on:
+  workflow_dispatch:
+
+# Standalone workflow — does NOT reuse build-image.yml's matrix because
+# tinycore is built outside the distrobuilder pipeline. We still need a
+# normal rootfs build (debian13-server, fastest) to source kernel
+# modules + firmware from, then we hand-build the ~80 MB tinycore image
+# via distros/tinycore/build.sh.
+jobs:
+  build:
+    runs-on: self-hosted
+    timeout-minutes: 120
+    permissions:
+      contents: write
+
+    env:
+      CCACHE_DIR: /data/cache/ps5/ccache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: image
+
+      - name: Stage pre-fetched downloads
+        run: |
+          set -eux
+          mkdir -p /data/cache/ps5/downloads image/work/cache
+          for f in /data/cache/ps5/downloads/*; do
+            [ -f "$f" ] || continue
+            ln -f "$f" "image/work/cache/$(basename "$f")"
+          done
+
+      - name: Wire persistent kernel cache (bust on PATCHES_REF/MWIFIEX_REF change)
+        run: |
+          set -eux
+          mkdir -p /data/cache/ps5/{linux,kernel-out,ccache}
+          PCUR=$(grep -E '^PATCHES_REF=' image/build_image.sh | head -1 | cut -d'"' -f2)
+          MCUR=$(grep -E '^MWIFIEX_REF=' image/build_image.sh | head -1 | cut -d'"' -f2)
+          CUR="$PCUR|$MCUR"
+          OLD=$(cat /data/cache/ps5/.patches-ref 2>/dev/null || echo "")
+          if [ "$CUR" != "$OLD" ]; then
+            rm -rf /data/cache/ps5/linux /data/cache/ps5/kernel-out
+            mkdir -p /data/cache/ps5/linux /data/cache/ps5/kernel-out
+            echo "$CUR" > /data/cache/ps5/.patches-ref
+          fi
+          mkdir -p image/work
+          ln -sfn /data/cache/ps5/linux       image/work/linux
+          ln -sfn /data/cache/ps5/kernel-out  image/linux-bin
+
+      - name: Build debian13-server (source of modules + firmware)
+        run: |
+          set -u
+          # Same retry-with-backoff pattern as build-image.yml in case of
+          # transient apt mirror flake.
+          OK=0
+          mkdir -p /data/ci-logs
+          TS=$(date -u +%Y%m%d-%H%M%S)
+          LOG="/data/ci-logs/tinycore-srcdistro-${TS}.log"
+          SLEEPS="30 60 120 240"
+          for try in 1 2 3 4 5; do
+            echo "::group::debian13-server build attempt $try"
+            if bash image/build_image.sh --distro debian13-server 2>&1 | tee -a "$LOG"; then
+              OK=1
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            if [ "$try" -lt 5 ]; then
+              S=$(echo "$SLEEPS" | cut -d' ' -f"$try")
+              echo "::warning::attempt $try failed; wiping chroot + sleeping ${S}s"
+              rm -rf image/work/chroot
+              mkdir -p image/work/chroot
+              sleep "$S"
+            fi
+          done
+          [ "$OK" = 1 ] || { echo "::error::debian13-server build failed; log $LOG"; exit 1; }
+          rm -f "$LOG"
+
+      - name: Locate kernel + module + firmware sources
+        id: src
+        run: |
+          set -eux
+          BZIMAGE="image/linux-bin/bzImage"
+          [ -f "$BZIMAGE" ] || { echo "::error::no bzImage at $BZIMAGE"; exit 1; }
+          # Find the kernel version dir under the debian13-server chroot.
+          MODULES_DIR=$(ls -d image/work/chroot/debian13-server/usr/lib/modules/*/ | head -1)
+          MODULES_DIR="${MODULES_DIR%/}"
+          [ -d "$MODULES_DIR" ] || { echo "::error::no modules dir found"; exit 1; }
+          FIRMWARE_DIR="image/work/chroot/debian13-server/usr/lib/firmware/amdgpu"
+          [ -d "$FIRMWARE_DIR" ] || { echo "::error::no amdgpu firmware dir"; exit 1; }
+          echo "bzimage=$BZIMAGE" >> "$GITHUB_OUTPUT"
+          echo "modules_dir=$MODULES_DIR" >> "$GITHUB_OUTPUT"
+          echo "firmware_dir=$FIRMWARE_DIR" >> "$GITHUB_OUTPUT"
+          ls -la "$BZIMAGE" "$MODULES_DIR" "$FIRMWARE_DIR/" | head -20
+
+      - name: Build tinycore image
+        run: |
+          set -eux
+          # Install only what distros/tinycore/build.sh needs that the
+          # debian13-server build already pulled in (cpio, gzip, etc.) —
+          # zstd is the most likely to be missing on the runner host
+          # itself if the build container provided it for the chroot
+          # only.
+          which cpio || sudo apt-get install -y cpio
+          which zstd || sudo apt-get install -y zstd
+          which xz   || sudo apt-get install -y xz-utils
+          which parted    || sudo apt-get install -y parted
+          which mkfs.vfat || sudo apt-get install -y dosfstools
+          which mkfs.ext4 || sudo apt-get install -y e2fsprogs
+
+          mkdir -p image/output
+          bash image/distros/tinycore/build.sh \
+            --bzimage      "${{ steps.src.outputs.bzimage }}" \
+            --modules-dir  "${{ steps.src.outputs.modules_dir }}" \
+            --firmware-dir "${{ steps.src.outputs.firmware_dir }}" \
+            --output       image/output/ps5-tinycore.img
+
+      - name: Report
+        run: |
+          ls -lh image/output/ps5-tinycore.img
+          sha256sum image/output/ps5-tinycore.img
+
+      - name: Compress image
+        run: |
+          xz -T0 -9 -c image/output/ps5-tinycore.img \
+            > image/output/ps5-tinycore.img.xz
+          ls -lh image/output/ps5-tinycore.img.xz
+
+      - name: Attach to Forgejo release (tag=latest)
+        env:
+          FORGEJO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          API="$SERVER/api/v1/repos/$REPO"
+          UA="ci-tinycore-uploader/1.0"
+          AUTH="Authorization: token $FORGEJO_TOKEN"
+          mkdir -p /data/cache/ps5
+          (
+            flock -x 9
+            REL_ID=$(curl -sS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/tags/latest" \
+              | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id","") if isinstance(d,dict) else "")' || true)
+            if [ -z "$REL_ID" ]; then
+              REL_ID=$(curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" -H "Content-Type: application/json" \
+                "$API/releases" \
+                -d '{"tag_name":"latest","name":"PS5 Linux Image (latest)","body":"build in progress","draft":false,"prerelease":false}' \
+                | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+            fi
+            FILE="ps5-tinycore.img.xz"
+            curl -fsS -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets" > /tmp/assets.json
+            for AID in $(FILE="$FILE" python3 -c 'import json,os; print(" ".join(str(a["id"]) for a in json.load(open("/tmp/assets.json")) if a.get("name")==os.environ["FILE"]))'); do
+              curl -fsS -X DELETE -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets/$AID" || true
+            done
+            curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" \
+              -F "attachment=@image/output/$FILE" \
+              "$API/releases/$REL_ID/assets?name=$FILE"
+          ) 9>/data/cache/ps5/.release-upload.lock
