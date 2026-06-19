@@ -92,36 +92,34 @@ jobs:
           echo "bzimage size: $(stat -c%s "$BZIMAGE") bytes"
           echo "modules:     $(find "$MODULES_DIR" -name '*.ko' | wc -l) .ko files"
 
-      - name: Install host build tooling (if not already present)
-        run: |
-          set -eux
-          # Stay distro-agnostic: try apt, pacman, or dnf — whichever the
-          # runner host has. Don't fail if one is missing; only error if a
-          # required binary is still absent after all attempts.
-          NEED="cpio zstd xz parted mkfs.vfat mkfs.ext4"
-          if command -v apt-get >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y cpio zstd xz-utils parted dosfstools e2fsprogs || true
-          elif command -v pacman >/dev/null; then
-            sudo pacman -Sy --noconfirm cpio zstd xz parted dosfstools e2fsprogs || true
-          elif command -v dnf >/dev/null; then
-            sudo dnf install -y cpio zstd xz parted dosfstools e2fsprogs || true
-          fi
-          for b in $NEED; do
-            command -v "$b" >/dev/null || { echo "::error::missing required tool $b"; exit 1; }
-          done
-
-      - name: Build tinycore image
+      - name: Build tinycore image (inside a debian:trixie container so the
+              tooling is host-distro independent — runners are MiaOS/Arch and
+              don't ship cpio/zstd/parted etc.)
         run: |
           set -eux
           mkdir -p image/output
-          # Firmware: uses bundled distros/tinycore/firmware/amdgpu/ by
-          # default (uncompressed cyan_skillfish blobs from upstream
-          # linux-firmware, shipped in the repo — no per-distro dep).
-          bash image/distros/tinycore/build.sh \
-            --bzimage      "${{ steps.kernel.outputs.bzimage }}" \
-            --modules-dir  "${{ steps.kernel.outputs.modules }}" \
-            --output       image/output/ps5-tinycore.img
+          # --privileged + bind-mounted /dev so the build.sh can losetup the
+          # image file and mount the FAT/ext4 partitions. Bind /run/udev so
+          # kpartx-style probes work even though we're not really using the
+          # host udev daemon.
+          docker run --rm --privileged \
+            -v /dev:/dev \
+            -v "$(pwd)/image:/repo" \
+            -w /repo \
+            debian:trixie \
+            bash -c '
+              set -eux
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y --no-install-recommends \
+                cpio zstd xz-utils parted dosfstools e2fsprogs \
+                kmod sudo curl ca-certificates
+              KVER_DIR=$(ls /repo/linux-bin/staging/lib/modules | head -1)
+              bash /repo/distros/tinycore/build.sh \
+                --bzimage     /repo/linux-bin/staging/boot/bzImage \
+                --modules-dir /repo/linux-bin/staging/lib/modules/$KVER_DIR \
+                --output      /repo/output/ps5-tinycore.img
+            '
 
       - name: Report
         run: |
