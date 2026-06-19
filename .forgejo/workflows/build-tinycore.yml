@@ -92,36 +92,35 @@ jobs:
           echo "bzimage size: $(stat -c%s "$BZIMAGE") bytes"
           echo "modules:     $(find "$MODULES_DIR" -name '*.ko' | wc -l) .ko files"
 
-      - name: Download cyan_skillfish firmware (Debian firmware-amd-graphics)
-        id: firmware
-        run: |
-          set -eux
-          FW_URL="http://ftp.debian.org/debian/pool/non-free-firmware/f/firmware-nonfree/firmware-amd-graphics_20250410-2_all.deb"
-          mkdir -p /tmp/fwdeb /tmp/fwout
-          curl -fsSL -o /tmp/fwamd.deb "$FW_URL"
-          dpkg-deb -x /tmp/fwamd.deb /tmp/fwdeb
-          # Debian ships firmware as .xz in /usr/lib/firmware/amdgpu/
-          ls /tmp/fwdeb/usr/lib/firmware/amdgpu/ | grep cyan_skillfish | head -5
-          FW_DIR="/tmp/fwdeb/usr/lib/firmware/amdgpu"
-          [ -d "$FW_DIR" ] || { echo "::error::no firmware dir extracted"; exit 1; }
-          # distros/tinycore/build.sh handles .zst/.xz/.bin transparently.
-          echo "firmware=$FW_DIR" >> "$GITHUB_OUTPUT"
-
       - name: Install host build tooling (if not already present)
         run: |
           set -eux
-          for pkg in cpio zstd xz-utils parted dosfstools e2fsprogs; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || sudo apt-get install -y "$pkg"
+          # Stay distro-agnostic: try apt, pacman, or dnf — whichever the
+          # runner host has. Don't fail if one is missing; only error if a
+          # required binary is still absent after all attempts.
+          NEED="cpio zstd xz parted mkfs.vfat mkfs.ext4"
+          if command -v apt-get >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y cpio zstd xz-utils parted dosfstools e2fsprogs || true
+          elif command -v pacman >/dev/null; then
+            sudo pacman -Sy --noconfirm cpio zstd xz parted dosfstools e2fsprogs || true
+          elif command -v dnf >/dev/null; then
+            sudo dnf install -y cpio zstd xz parted dosfstools e2fsprogs || true
+          fi
+          for b in $NEED; do
+            command -v "$b" >/dev/null || { echo "::error::missing required tool $b"; exit 1; }
           done
 
       - name: Build tinycore image
         run: |
           set -eux
           mkdir -p image/output
+          # Firmware: uses bundled distros/tinycore/firmware/amdgpu/ by
+          # default (uncompressed cyan_skillfish blobs from upstream
+          # linux-firmware, shipped in the repo — no per-distro dep).
           bash image/distros/tinycore/build.sh \
             --bzimage      "${{ steps.kernel.outputs.bzimage }}" \
             --modules-dir  "${{ steps.kernel.outputs.modules }}" \
-            --firmware-dir "${{ steps.firmware.outputs.firmware }}" \
             --output       image/output/ps5-tinycore.img
 
       - name: Report

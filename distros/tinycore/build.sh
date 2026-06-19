@@ -23,9 +23,12 @@
 #   --bzimage <path>      linux-ps5 bzImage produced by the kernel-builder
 #   --modules-dir <dir>   Mirrors /usr/lib/modules/<KVER>/ from a built rootfs
 #                         (must contain kernel/, modules.builtin, modules.order)
-#   --firmware-dir <dir>  Path containing cyan_skillfish*.{zst,xz,bin} (typically
-#                         /usr/lib/firmware/amdgpu/ from a built rootfs)
 # Optional:
+#   --firmware-dir <dir>  Path containing cyan_skillfish*.{zst,xz,bin} (typically
+#                         /usr/lib/firmware/amdgpu/ from a built rootfs).
+#                         Defaults to the bundled firmware/amdgpu/ next to this
+#                         script, which ships uncompressed cyan_skillfish blobs
+#                         from upstream linux-firmware (no distro dependency).
 #   --kver <ver>          Override kernel version (default: detected from --bzimage)
 #   --img-size <MB>       Total disk image size (default: 80)
 #   --efi-size <MB>       EFI partition size (default: 60)
@@ -70,7 +73,10 @@ done
 
 [ -n "$BZIMAGE" ] && [ -f "$BZIMAGE" ] || { echo "ERROR: --bzimage <existing file> required" >&2; exit 2; }
 [ -n "$MODULES_DIR" ] && [ -d "$MODULES_DIR" ] || { echo "ERROR: --modules-dir <existing dir> required" >&2; exit 2; }
-[ -n "$FIRMWARE_DIR" ] && [ -d "$FIRMWARE_DIR" ] || { echo "ERROR: --firmware-dir <existing dir> required" >&2; exit 2; }
+
+# Default firmware to the bundled blobs in this distro's tree.
+FIRMWARE_DIR="${FIRMWARE_DIR:-$SCRIPT_DIR/firmware/amdgpu}"
+[ -d "$FIRMWARE_DIR" ] || { echo "ERROR: firmware dir does not exist: $FIRMWARE_DIR" >&2; exit 2; }
 
 # Auto-detect kernel version from the modules dir if not specified.
 if [ -z "$KVER" ]; then

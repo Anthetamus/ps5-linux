@@ -18,7 +18,9 @@ use (TinyCore doesn't fit `distrobuilder`'s rootfs-based model).
   firmware buffer in-place — if that buffer is mapped `PAGE_KERNEL_RO` from a
   zstd/xz blob it oopses at `gfx_v10_0_early_init+0x415`) + a custom `/init`
   that direct-`exec`s a busybox shell on tty1 (no `/sbin/init`, no TC `rcS`,
-  no `switch_root`).
+  no `switch_root`).  Firmware blobs are bundled here at
+  `distros/tinycore/firmware/amdgpu/` — extracted once from upstream
+  linux-firmware, no per-distro package dependency.
 - **cmdline.txt**: `noembed multivt console=ttyTitania0 console=tty0 …`
 
 ## Boot flow
@@ -38,14 +40,12 @@ Resume → linux-ps5 boots → our `/init` brings up amdgpu + HID + USB-Ethernet
 # 1. Build the linux-ps5 kernel + modules with the normal pipeline:
 ./build_image.sh --kernel-only
 
-# 2. Build the tinycore image, pointing at the kernel/modules/firmware that
-#    pipeline produced.  Modules/firmware can come from any existing PS5
-#    rootfs build (debian13-server is convenient since it's the smallest
-#    distrobuilder-based target).
+# 2. Build the tinycore image.  Both bzImage and modules come from
+#    linux-bin/staging/ (populated by the --kernel-only build).  Firmware
+#    is bundled in this dir — no --firmware-dir needed.
 ./distros/tinycore/build.sh \
-    --bzimage      linux-bin/bzImage \
-    --modules-dir  work/chroot/debian13-server/usr/lib/modules/7.0.10 \
-    --firmware-dir work/chroot/debian13-server/usr/lib/firmware/amdgpu
+    --bzimage     linux-bin/staging/boot/bzImage \
+    --modules-dir linux-bin/staging/lib/modules/7.0.10
 ```
 
 Output: `output/ps5-tinycore.img` (~80 MB).
