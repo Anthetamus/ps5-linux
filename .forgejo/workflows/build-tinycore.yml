@@ -4,11 +4,12 @@ run-name: Build TinyCore image
 on:
   workflow_dispatch:
 
-# Standalone workflow — does NOT reuse build-image.yml's matrix because
-# tinycore is built outside the distrobuilder pipeline. We still need a
-# normal rootfs build (debian13-server, fastest) to source kernel
-# modules + firmware from, then we hand-build the ~80 MB tinycore image
-# via distros/tinycore/build.sh.
+# Standalone — does NOT reuse build-image.yml's matrix. TinyCore is
+# built outside the distrobuilder pipeline: we only need the kernel
+# (built via --kernel-only) plus a copy of the cyan_skillfish firmware
+# blob (downloaded from Debian's firmware-amd-graphics package). Total
+# build time is dominated by the one-time kernel build; subsequent runs
+# hit the cached kernel-out and complete in ~3 minutes.
 jobs:
   build:
     runs-on: self-hosted
@@ -51,19 +52,17 @@ jobs:
           ln -sfn /data/cache/ps5/linux       image/work/linux
           ln -sfn /data/cache/ps5/kernel-out  image/linux-bin
 
-      - name: Build debian13-server (source of modules + firmware)
+      - name: Build linux-ps5 kernel (--kernel-only)
         run: |
           set -u
-          # Same retry-with-backoff pattern as build-image.yml in case of
-          # transient apt mirror flake.
           OK=0
           mkdir -p /data/ci-logs
           TS=$(date -u +%Y%m%d-%H%M%S)
-          LOG="/data/ci-logs/tinycore-srcdistro-${TS}.log"
+          LOG="/data/ci-logs/tinycore-kernel-${TS}.log"
           SLEEPS="30 60 120 240"
           for try in 1 2 3 4 5; do
-            echo "::group::debian13-server build attempt $try"
-            if bash image/build_image.sh --distro debian13-server 2>&1 | tee -a "$LOG"; then
+            echo "::group::kernel build attempt $try"
+            if bash image/build_image.sh --kernel-only 2>&1 | tee -a "$LOG"; then
               OK=1
               echo "::endgroup::"
               break
@@ -71,52 +70,58 @@ jobs:
             echo "::endgroup::"
             if [ "$try" -lt 5 ]; then
               S=$(echo "$SLEEPS" | cut -d' ' -f"$try")
-              echo "::warning::attempt $try failed; wiping chroot + sleeping ${S}s"
-              rm -rf image/work/chroot
-              mkdir -p image/work/chroot
+              echo "::warning::attempt $try failed; sleeping ${S}s"
               sleep "$S"
             fi
           done
-          [ "$OK" = 1 ] || { echo "::error::debian13-server build failed; log $LOG"; exit 1; }
+          [ "$OK" = 1 ] || { echo "::error::kernel build failed; log $LOG"; exit 1; }
           rm -f "$LOG"
 
-      - name: Locate kernel + module + firmware sources
-        id: src
+      - name: Locate kernel artifacts
+        id: kernel
         run: |
           set -eux
-          BZIMAGE="image/linux-bin/bzImage"
-          [ -f "$BZIMAGE" ] || { echo "::error::no bzImage at $BZIMAGE"; exit 1; }
-          # Find the kernel version dir under the debian13-server chroot.
-          MODULES_DIR=$(ls -d image/work/chroot/debian13-server/usr/lib/modules/*/ | head -1)
-          MODULES_DIR="${MODULES_DIR%/}"
-          [ -d "$MODULES_DIR" ] || { echo "::error::no modules dir found"; exit 1; }
-          FIRMWARE_DIR="image/work/chroot/debian13-server/usr/lib/firmware/amdgpu"
-          [ -d "$FIRMWARE_DIR" ] || { echo "::error::no amdgpu firmware dir"; exit 1; }
-          echo "bzimage=$BZIMAGE" >> "$GITHUB_OUTPUT"
-          echo "modules_dir=$MODULES_DIR" >> "$GITHUB_OUTPUT"
-          echo "firmware_dir=$FIRMWARE_DIR" >> "$GITHUB_OUTPUT"
-          ls -la "$BZIMAGE" "$MODULES_DIR" "$FIRMWARE_DIR/" | head -20
+          # staging/ is populated by docker/kernel-builder; it mirrors the
+          # `make install_modules` layout the kernel packages get built from.
+          BZIMAGE="image/linux-bin/staging/boot/bzImage"
+          MODULES_DIR="image/linux-bin/staging/lib/modules/$(ls image/linux-bin/staging/lib/modules | head -1)"
+          [ -f "$BZIMAGE" ]    || { echo "::error::no bzImage at $BZIMAGE"; ls -la image/linux-bin/staging/boot/ 2>/dev/null; exit 1; }
+          [ -d "$MODULES_DIR" ] || { echo "::error::no modules dir at $MODULES_DIR"; ls image/linux-bin/staging/lib/modules/ 2>/dev/null; exit 1; }
+          echo "bzimage=$BZIMAGE"     >> "$GITHUB_OUTPUT"
+          echo "modules=$MODULES_DIR" >> "$GITHUB_OUTPUT"
+          echo "bzimage size: $(stat -c%s "$BZIMAGE") bytes"
+          echo "modules:     $(find "$MODULES_DIR" -name '*.ko' | wc -l) .ko files"
+
+      - name: Download cyan_skillfish firmware (Debian firmware-amd-graphics)
+        id: firmware
+        run: |
+          set -eux
+          FW_URL="http://ftp.debian.org/debian/pool/non-free-firmware/f/firmware-nonfree/firmware-amd-graphics_20250410-2_all.deb"
+          mkdir -p /tmp/fwdeb /tmp/fwout
+          curl -fsSL -o /tmp/fwamd.deb "$FW_URL"
+          dpkg-deb -x /tmp/fwamd.deb /tmp/fwdeb
+          # Debian ships firmware as .xz in /usr/lib/firmware/amdgpu/
+          ls /tmp/fwdeb/usr/lib/firmware/amdgpu/ | grep cyan_skillfish | head -5
+          FW_DIR="/tmp/fwdeb/usr/lib/firmware/amdgpu"
+          [ -d "$FW_DIR" ] || { echo "::error::no firmware dir extracted"; exit 1; }
+          # distros/tinycore/build.sh handles .zst/.xz/.bin transparently.
+          echo "firmware=$FW_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Install host build tooling (if not already present)
+        run: |
+          set -eux
+          for pkg in cpio zstd xz-utils parted dosfstools e2fsprogs; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || sudo apt-get install -y "$pkg"
+          done
 
       - name: Build tinycore image
         run: |
           set -eux
-          # Install only what distros/tinycore/build.sh needs that the
-          # debian13-server build already pulled in (cpio, gzip, etc.) —
-          # zstd is the most likely to be missing on the runner host
-          # itself if the build container provided it for the chroot
-          # only.
-          which cpio || sudo apt-get install -y cpio
-          which zstd || sudo apt-get install -y zstd
-          which xz   || sudo apt-get install -y xz-utils
-          which parted    || sudo apt-get install -y parted
-          which mkfs.vfat || sudo apt-get install -y dosfstools
-          which mkfs.ext4 || sudo apt-get install -y e2fsprogs
-
           mkdir -p image/output
           bash image/distros/tinycore/build.sh \
-            --bzimage      "${{ steps.src.outputs.bzimage }}" \
-            --modules-dir  "${{ steps.src.outputs.modules_dir }}" \
-            --firmware-dir "${{ steps.src.outputs.firmware_dir }}" \
+            --bzimage      "${{ steps.kernel.outputs.bzimage }}" \
+            --modules-dir  "${{ steps.kernel.outputs.modules }}" \
+            --firmware-dir "${{ steps.firmware.outputs.firmware }}" \
             --output       image/output/ps5-tinycore.img
 
       - name: Report
