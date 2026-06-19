@@ -102,8 +102,12 @@ jobs:
           # image file and mount the FAT/ext4 partitions. Bind /run/udev so
           # kpartx-style probes work even though we're not really using the
           # host udev daemon.
+          # image/linux-bin is a symlink to /data/cache/ps5/kernel-out (set
+          # up in the cache-wire step), so we have to bind the real path too
+          # or the symlink dangles inside the container.
           docker run --rm --privileged \
             -v /dev:/dev \
+            -v /data/cache/ps5:/data/cache/ps5:ro \
             -v "$(pwd)/image:/repo" \
             -w /repo \
             debian:trixie \
