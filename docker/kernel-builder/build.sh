@@ -34,6 +34,18 @@ make headers_install INSTALL_HDR_PATH="$HDR/usr"
 export srctree=/src SRCARCH=x86
 CC="${CROSS_COMPILE}gcc" HOSTCC=gcc MAKE=make /src/scripts/package/install-extmod-build "$HDR/lib/modules/$KVER/build"
 
+# install-extmod-build copies tools/objtool/objtool from the kernel source
+# tree. If that tree was previously built under --platform linux/arm64 (our
+# CI runners share a /data cache across arches), the staged objtool is an
+# aarch64 ELF, which dpkg-shlibdeps then auto-pins as `ld-linux-aarch64.so.1`
+# in the .deb. alien -> rpm carries that bogus dep over and dnf upgrade
+# fails with "nothing provides ld-linux-aarch64.so.1". Out-of-tree builders
+# don't need a prebuilt objtool — kbuild rebuilds it on demand.
+find "$HDR/lib/modules/$KVER/build/tools/objtool" -maxdepth 1 -type f \
+    -exec file {} + 2>/dev/null \
+    | awk -F: '/ELF/ && !/x86-64/ {print $1}' \
+    | xargs -r rm -f
+
 # ─── PS5 IW620 mwifiex driver ────────────────────────────────────────────────
 # Out-of-tree module built against the kernel we just compiled. The
 # ps5-linux-mwifiex repo provides a single patch on top of NXP's mwifiex
