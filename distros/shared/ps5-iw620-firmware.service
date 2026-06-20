@@ -1,0 +1,15 @@
+[Unit]
+Description=Bridge NXP IW620 wifi firmware from /boot/efi/lib to /lib/firmware
+Documentation=https://github.com/ps5-linux/ps5-linux-mwifiex
+ConditionPathExists=/boot/efi/lib/nxp/pcieuartiw620_combo_v1.bin
+DefaultDependencies=no
+Before=systemd-modules-load.service systemd-udev-trigger.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ps5-iw620-firmware-install
+
+[Install]
+WantedBy=sysinit.target

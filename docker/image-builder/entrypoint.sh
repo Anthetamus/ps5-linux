@@ -1287,6 +1287,33 @@ PS5BOOST_OPENRC
 esac
 rm -rf "$PS5TOOLS_DIR"
 
+# --- NXP IW620 wifi firmware bridge ---
+# The PS5's NXP IW620 wifi needs nxp/pcieuartiw620_combo_v1.bin, which is
+# NOT in linux-firmware. ps5-linux-loader dumps it to /boot/efi/lib/nxp/
+# at exploit time. This one-shot service copies that blob into
+# /lib/firmware/nxp/ early in sysinit so moal finds it when it loads.
+# Idempotent (no-op on subsequent boots), ConditionPathExists guards
+# against running if the loader never ran (and the firmware was never
+# dumped).
+install -Dm755 /repo/distros/shared/ps5-iw620-firmware-install \
+    "$CHROOT/usr/local/sbin/ps5-iw620-firmware-install"
+
+case "$DISTRO" in
+    alpine|devuan*|artix*)
+        # Non-systemd distros: skip the unit for now. moal still works if
+        # the firmware happens to be present from a previous boot or
+        # manually placed.
+        # TODO: openrc/runit/sysv equivalents
+        ;;
+    *)
+        install -Dm644 /repo/distros/shared/ps5-iw620-firmware.service \
+            "$CHROOT/etc/systemd/system/ps5-iw620-firmware.service"
+        mkdir -p "$CHROOT/etc/systemd/system/sysinit.target.wants"
+        ln -sf ../ps5-iw620-firmware.service \
+            "$CHROOT/etc/systemd/system/sysinit.target.wants/ps5-iw620-firmware.service"
+        ;;
+esac
+
 # --- Alpine kernel gap: no kernel installed via image.yaml ---
 # Extract kernel from .deb, copy modules + bzImage, then chroot to run mkinitfs
 if [ "$DISTRO" = "alpine" ]; then
