@@ -1,16 +1,18 @@
 #!/bin/sh
-# Copy PS5 NXP IW620 wifi firmware from the FAT boot partition (where the
+# Move PS5 NXP IW620 wifi firmware from the FAT boot partition (where the
 # ps5-linux-loader payload dumps it post-jailbreak) into /lib/firmware so
-# moal can find it. Idempotent — runs on every boot, no-op if source is
-# missing or destination is already up to date.
+# moal can find it. mv (not cp) so the FAT copy is reclaimed; the loader
+# re-dumps to /boot/efi/lib/ on the next exploit run anyway.
+#
+# Idempotent — if /boot/efi/lib/nxp/ is empty (typical post-first-boot)
+# the ConditionPathExists in the unit short-circuits and this never runs.
 set -eu
 SRC=/boot/efi/lib/nxp/pcieuartiw620_combo_v1.bin
 DST=/lib/firmware/nxp/pcieuartiw620_combo_v1.bin
 [ -f "$SRC" ] || exit 0
 mkdir -p "$(dirname "$DST")"
-if [ ! -f "$DST" ] || ! cmp -s "$SRC" "$DST"; then
-    install -m 0644 "$SRC" "$DST"
-    # Tell modprobe / udev to pick up the new firmware (in case moal was
-    # already loaded but failed to find the firmware on first try).
-    udevadm trigger --action=add 2>/dev/null || true
-fi
+# Cross-filesystem mv (FAT → ext4) is copy + delete under the hood.
+mv -f "$SRC" "$DST"
+chmod 0644 "$DST"
+# Tell udev to retry firmware load in case moal was already up + failed.
+udevadm trigger --action=add 2>/dev/null || true
