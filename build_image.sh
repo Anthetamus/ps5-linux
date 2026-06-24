@@ -443,8 +443,12 @@ fi
 exec 9>&-
 
 # --- Step 2: Build distribution image ---
+# --pull refreshes the ubuntu base; CACHEBUST arg invalidates the entrypoint
+# COPY step every build so edits to entrypoint.sh actually land in the image
+# without needing --no-cache (which would re-run the 5-min apt install).
 run_stage "Build image builder image" \
-    docker build -t ps5-image-builder -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR"
+    docker build --pull --build-arg "CACHEBUST=$(date +%s)" \
+        -t ps5-image-builder -f "$SCRIPT_DIR/docker/image-builder/Dockerfile" "$SCRIPT_DIR"
 
 if [ "$DISTRO" = "all" ]; then
     DOCKER_ARGS=(

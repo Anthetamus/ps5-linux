@@ -5,11 +5,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # System dependencies for distrobuilder and image creation.
 # umoci is required by distrobuilder when bootstrapping Fedora (OCI Container image).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates wget git make gcc libc6-dev build-essential \
+    ca-certificates wget curl git make gcc libc6-dev build-essential \
     zlib1g-dev \
     debootstrap rsync gpg gpg-agent dirmngr squashfs-tools \
-    btrfs-progs \
-    parted dosfstools e2fsprogs kmod \
+    btrfs-progs erofs-utils \
+    parted dosfstools e2fsprogs kmod libarchive-tools \
     initramfs-tools fdisk gdisk udev kpartx \
     xz-utils bzip2 zstd \
     umoci skopeo \
@@ -33,6 +33,10 @@ RUN mkdir -p /root/go/src/github.com/lxc/ && \
 
 WORKDIR /build
 
+# CACHEBUST: invalidate the entrypoint COPY layer every build so edits to
+# entrypoint.sh actually land in the image without --no-cache.
+ARG CACHEBUST=0
+RUN echo "cachebust=$CACHEBUST" > /dev/null
 COPY docker/image-builder/entrypoint.sh /entrypoint.sh
 COPY docker/image-builder/entrypoint-multi.sh /entrypoint-multi.sh
 RUN chmod +x /entrypoint.sh /entrypoint-multi.sh
