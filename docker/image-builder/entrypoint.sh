@@ -6,6 +6,7 @@ DISTRO="${DISTRO:-ubuntu2604}"
 case "${DISTRO}" in
     bazzite*)  IMG_SIZE="${IMG_SIZE:-20000}" ;;
     batocera*) IMG_SIZE="${IMG_SIZE:-16000}" ;;
+    steamos)   IMG_SIZE="${IMG_SIZE:-14000}" ;;
     *)         IMG_SIZE="${IMG_SIZE:-12000}" ;;
 esac
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
@@ -116,6 +117,13 @@ EOF
             cp /repo/distros/cachyos/files/ps5-display.lua            "$STAGING/files/"
             cp /repo/distros/cachyos/files/plasma-workspace-env-ps5.sh "$STAGING/files/"
             cp /repo/distros/cachyos/files/ps5-tty-session.sh         "$STAGING/files/"
+            mkdir -p "$STAGING/pkgs"
+            cp /kernel-debs/*.pkg.tar.zst                             "$STAGING/pkgs/"
+            ;;
+        steamos)
+            # SteamOS image-swap path: stages just the linux-ps5 pkg.tar.zst
+            # so the rootfs build below can extract it into the unpacked
+            # SteamOS rootfs.
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                             "$STAGING/pkgs/"
             ;;
@@ -1083,6 +1091,115 @@ BAZIN
             # explicit cleanup (the trap covers the failure path)
             cleanup_bazzite_mounts
             trap - RETURN ERR EXIT
+            ;;
+        steamos)
+            # SteamOS — image-swap based on Valve's Steam Deck recovery
+            # image. Same pattern as batocera: download upstream image,
+            # extract its rootfs to $CHROOT, swap in linux-ps5 kernel.
+            STEAMOS_URL="${STEAMOS_URL:-https://steamdeck-images.steamos.cloud/recovery/steamdeck-repair-latest.img.bz2}"
+            echo "=== SteamOS: resolve latest image URL ==="
+            RESOLVED_URL=$(curl -sIL -o /dev/null -w '%{url_effective}' "$STEAMOS_URL")
+            IMG_NAME=$(basename "$RESOLVED_URL")
+            echo ">> resolved $IMG_NAME"
+
+            CACHED="/build/cache/$IMG_NAME"
+            if [ ! -s "$CACHED" ]; then
+                echo ">> downloading $IMG_NAME (~3.4 GB from Valve CDN)"
+                wget --tries=3 -O "$CACHED.part" "$RESOLVED_URL"
+                mv "$CACHED.part" "$CACHED"
+            fi
+            echo ">> using $CACHED ($(du -h "$CACHED" | cut -f1))"
+
+            echo "=== SteamOS: decompress + loop ==="
+            STEAMOS_IMG=/build/steamos-src.img
+            bunzip2 -kc "$CACHED" > "$STEAMOS_IMG"
+            SLOOP=$(losetup -Pf --show "$STEAMOS_IMG")
+            sleep 1
+            [ -e "${SLOOP}p1" ] || kpartx -av "$SLOOP"
+
+            # Pick the FIRST erofs partition (rootfs-A; A and B are identical).
+            SROOT=""
+            for p in "${SLOOP}"p*; do
+                [ -e "$p" ] || continue
+                t=$(blkid -o value -s TYPE "$p" 2>/dev/null || echo "")
+                if [ "$t" = "erofs" ]; then SROOT="$p"; break; fi
+            done
+            [ -z "$SROOT" ] && { echo "ERROR: no erofs rootfs in SteamOS image"; exit 1; }
+            echo ">> rootfs slot: $SROOT"
+
+            SMNT=$(mktemp -d)
+            mount -t erofs -o ro "$SROOT" "$SMNT"
+            echo "=== SteamOS: copy rootfs ($(du -sh "$SMNT" | cut -f1)) -> \$CHROOT ==="
+            cp -a "$SMNT"/. "$CHROOT/"
+            umount "$SMNT"
+            rmdir "$SMNT"
+
+            # SteamOS splits /var off the rootfs onto its own partition.
+            # First-boot fails without /var/lib/dbus etc.
+            VARMNT=$(mktemp -d)
+            for p in "${SLOOP}"p*; do
+                [ -e "$p" ] || continue
+                t=$(blkid -o value -s TYPE "$p" 2>/dev/null || echo "")
+                sz=$(blockdev --getsize64 "$p" 2>/dev/null || echo 0)
+                if [ "$t" = "ext4" ] && [ "$sz" -lt $((2 * 1024 * 1024 * 1024)) ]; then
+                    if mount -o ro "$p" "$VARMNT" 2>/dev/null; then
+                        if [ -d "$VARMNT/lib" ] || [ -d "$VARMNT/log" ]; then
+                            echo "=== SteamOS: copy var ($(du -sh "$VARMNT" | cut -f1)) -> \$CHROOT/var ==="
+                            mkdir -p "$CHROOT/var"
+                            cp -a "$VARMNT"/. "$CHROOT/var/" || true
+                            umount "$VARMNT"
+                            break
+                        fi
+                        umount "$VARMNT" 2>/dev/null || true
+                    fi
+                fi
+            done
+            rmdir "$VARMNT"
+
+            kpartx -dv "$SLOOP" 2>/dev/null || true
+            losetup -d "$SLOOP"
+            rm -f "$STEAMOS_IMG"
+
+            echo "=== SteamOS: install linux-ps5 kernel pkg ==="
+            PKG=$(ls "$STAGING"/pkgs/linux-ps5-*.pkg.tar.zst 2>/dev/null | head -1)
+            [ -z "$PKG" ] && { echo "ERROR: no linux-ps5 pkg.tar.zst staged"; exit 1; }
+            TMP=$(mktemp -d)
+            bsdtar -xf "$PKG" -C "$TMP"
+            for d in usr boot etc; do
+                [ -d "$TMP/$d" ] && cp -a "$TMP/$d"/. "$CHROOT/$d/" 2>/dev/null || true
+            done
+            rm -rf "$TMP"
+
+            # KVER from the pkg layout
+            KVER=$(ls -1 "$CHROOT/usr/lib/modules" 2>/dev/null \
+                | grep -v "$(ls -1 "$CHROOT/usr/lib/modules" 2>/dev/null \
+                             | grep -E 'neptune|^[0-9]+\.[0-9]+\.[0-9]+-[^-]+$' \
+                             | grep -v 'ps5' || true)" | head -1)
+            [ -z "$KVER" ] && KVER=$(ls -1 "$CHROOT/usr/lib/modules" 2>/dev/null | grep ps5 | head -1)
+            [ -z "$KVER" ] && KVER=$(ls -1 "$CHROOT/usr/lib/modules" 2>/dev/null | head -1)
+            echo ">> KVER=$KVER"
+
+            # Drop SteamOS's own kernel(s) so grub boots ours
+            rm -f "$CHROOT"/boot/vmlinuz-linux* "$CHROOT"/boot/initrd*-neptune* \
+                  "$CHROOT"/boot/initramfs-linux*.img 2>/dev/null || true
+            for d in "$CHROOT"/usr/lib/modules/*; do
+                [ -d "$d" ] || continue
+                [ "$(basename "$d")" = "$KVER" ] && continue
+                rm -rf "$d"
+            done
+
+            if [ -x "$CHROOT/usr/bin/depmod" ]; then
+                chroot "$CHROOT" /usr/bin/depmod -a "$KVER" || true
+            else
+                depmod -b "$CHROOT" "$KVER" || true
+            fi
+
+            [ -f "$CHROOT/boot/vmlinuz-$KVER" ] || \
+                cp "$CHROOT"/boot/vmlinuz-* "$CHROOT/boot/vmlinuz-$KVER" 2>/dev/null || true
+            mkdir -p "$CHROOT/boot/efi"
+            cp "$CHROOT/boot/vmlinuz-$KVER" "$CHROOT/boot/efi/bzImage" 2>/dev/null || true
+
+            echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)) ==="
             ;;
         *)
             YAML="/repo/distros/${DISTRO}/image.yaml"
