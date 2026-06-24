@@ -1128,23 +1128,54 @@ BAZIN
                 [ -e "$cand" ] && PART_PATHS+=("$cand")
             done
 
-            # Pick the FIRST erofs partition (rootfs-A; A and B are identical).
+            # The RECOVERY image uses btrfs for the rootfs (production
+            # SteamOS uses erofs A/B; recovery needs writes so it's btrfs).
+            # Take the first btrfs partition; that's rootfs. Fall back to
+            # erofs in case Valve ever changes it.
             SROOT=""
-            for p in "${PART_PATHS[@]}"; do
-                t=$(blkid -o value -s TYPE "$p" 2>/dev/null || echo "")
-                if [ "$t" = "erofs" ]; then SROOT="$p"; break; fi
+            SROOT_FS=""
+            for fstype in btrfs erofs; do
+                for p in "${PART_PATHS[@]}"; do
+                    t=$(blkid -o value -s TYPE "$p" 2>/dev/null || echo "")
+                    if [ "$t" = "$fstype" ]; then
+                        SROOT="$p"; SROOT_FS="$fstype"; break 2
+                    fi
+                done
             done
             if [ -z "$SROOT" ]; then
-                echo "ERROR: no erofs rootfs in SteamOS image. partitions seen:"
+                echo "ERROR: no btrfs/erofs rootfs in SteamOS image. partitions seen:"
                 for p in "${PART_PATHS[@]}"; do
                     echo "  $p  type=$(blkid -o value -s TYPE "$p" 2>/dev/null) size=$(blockdev --getsize64 "$p" 2>/dev/null)"
                 done
                 exit 1
             fi
-            echo ">> rootfs slot: $SROOT"
+            echo ">> rootfs slot: $SROOT ($SROOT_FS)"
 
             SMNT=$(mktemp -d)
-            mount -t erofs -o ro "$SROOT" "$SMNT"
+            mount -t "$SROOT_FS" -o ro "$SROOT" "$SMNT"
+
+            # If btrfs, look for SteamOS's @rootfs subvolume — the top-level
+            # btrfs view may be empty / hold only subvol entries, in which
+            # case we need to remount with subvol=@rootfs (or @, depending
+            # on the image's layout).
+            if [ "$SROOT_FS" = "btrfs" ] && [ ! -d "$SMNT/usr" ]; then
+                echo ">> top-level btrfs has no /usr; scanning subvolumes"
+                btrfs subvolume list "$SMNT" 2>&1 | head -20 || true
+                umount "$SMNT"
+                for sub in @rootfs @ rootfs root; do
+                    if mount -t btrfs -o "ro,subvol=$sub" "$SROOT" "$SMNT" 2>/dev/null; then
+                        if [ -d "$SMNT/usr" ]; then
+                            echo ">> rootfs at subvol=$sub"
+                            break
+                        fi
+                        umount "$SMNT"
+                    fi
+                done
+                if [ ! -d "$SMNT/usr" ]; then
+                    echo "ERROR: couldn't locate rootfs in btrfs at any known subvol"
+                    exit 1
+                fi
+            fi
             echo "=== SteamOS: copy rootfs ($(du -sh "$SMNT" | cut -f1)) -> \$CHROOT ==="
             cp -a "$SMNT"/. "$CHROOT/"
             umount "$SMNT"
