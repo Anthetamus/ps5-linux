@@ -1115,16 +1115,32 @@ BAZIN
             bunzip2 -kc "$CACHED" > "$STEAMOS_IMG"
             SLOOP=$(losetup -Pf --show "$STEAMOS_IMG")
             sleep 1
-            [ -e "${SLOOP}p1" ] || kpartx -av "$SLOOP"
+            # kpartx fallback when loopNpX devices didn't appear under /dev/
+            if [ ! -e "${SLOOP}p1" ]; then
+                kpartx -av "$SLOOP"
+                sleep 1
+            fi
+            # Build candidate partition list — either /dev/loopNpX or
+            # /dev/mapper/loopNpX depending on how kpartx mapped them.
+            SLOOP_BASE=$(basename "$SLOOP")
+            PART_PATHS=()
+            for cand in "${SLOOP}"p* "/dev/mapper/${SLOOP_BASE}"p*; do
+                [ -e "$cand" ] && PART_PATHS+=("$cand")
+            done
 
             # Pick the FIRST erofs partition (rootfs-A; A and B are identical).
             SROOT=""
-            for p in "${SLOOP}"p*; do
-                [ -e "$p" ] || continue
+            for p in "${PART_PATHS[@]}"; do
                 t=$(blkid -o value -s TYPE "$p" 2>/dev/null || echo "")
                 if [ "$t" = "erofs" ]; then SROOT="$p"; break; fi
             done
-            [ -z "$SROOT" ] && { echo "ERROR: no erofs rootfs in SteamOS image"; exit 1; }
+            if [ -z "$SROOT" ]; then
+                echo "ERROR: no erofs rootfs in SteamOS image. partitions seen:"
+                for p in "${PART_PATHS[@]}"; do
+                    echo "  $p  type=$(blkid -o value -s TYPE "$p" 2>/dev/null) size=$(blockdev --getsize64 "$p" 2>/dev/null)"
+                done
+                exit 1
+            fi
             echo ">> rootfs slot: $SROOT"
 
             SMNT=$(mktemp -d)
@@ -1137,8 +1153,7 @@ BAZIN
             # SteamOS splits /var off the rootfs onto its own partition.
             # First-boot fails without /var/lib/dbus etc.
             VARMNT=$(mktemp -d)
-            for p in "${SLOOP}"p*; do
-                [ -e "$p" ] || continue
+            for p in "${PART_PATHS[@]}"; do
                 t=$(blkid -o value -s TYPE "$p" 2>/dev/null || echo "")
                 sz=$(blockdev --getsize64 "$p" 2>/dev/null || echo 0)
                 if [ "$t" = "ext4" ] && [ "$sz" -lt $((2 * 1024 * 1024 * 1024)) ]; then
