@@ -1245,7 +1245,47 @@ BAZIN
             mkdir -p "$CHROOT/boot/efi"
             cp "$CHROOT/boot/vmlinuz-$KVER" "$CHROOT/boot/efi/bzImage" 2>/dev/null || true
 
-            echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)) ==="
+            # Symlink chroot's modules into host /lib/modules so the build
+            # container's mkinitramfs/depmod can see them. PS5 kernel pkg
+            # installs modules under /usr/lib/modules.
+            echo "=== SteamOS: build initrd via host mkinitramfs ==="
+            mkdir -p /lib/modules
+            ln -sfn "$CHROOT/usr/lib/modules/$KVER" "/lib/modules/$KVER"
+
+            cat > /etc/initramfs-tools/modules <<'INITMODS'
+# USB host controllers (PS5 boot drive is USB 3 — xhci must be present).
+xhci_pci
+xhci_hcd
+ehci_pci
+ehci_hcd
+ohci_pci
+ohci_hcd
+# Storage
+usb-storage
+uas
+# Filesystems we may root on
+ext4
+btrfs
+vfat
+# Block stack
+sd_mod
+loop
+dm_mod
+# AMD GPU + display for early framebuffer
+amdgpu
+INITMODS
+
+            # Force MODULES=most so we include everything for the PS5
+            # regardless of what's loaded in the build container.
+            sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
+
+            mkinitramfs -k "$KVER" -o "$CHROOT/boot/efi/initrd.img"
+            # Also drop a copy at the standard location inside the rootfs.
+            cp "$CHROOT/boot/efi/initrd.img" "$CHROOT/boot/initramfs-$KVER.img"
+
+            rm -f "/lib/modules/$KVER"
+
+            echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
             YAML="/repo/distros/${DISTRO}/image.yaml"
