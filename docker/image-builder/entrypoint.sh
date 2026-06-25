@@ -1290,9 +1290,21 @@ INITMODS
             # systemd hangs at "solid cursor on tty1" forever. Fix both so
             # either path reaches graphical.target.
             ln -sf /usr/lib/systemd/system/graphical.target "$CHROOT/etc/systemd/system/default.target"
+
             # Persistent journal so post-boot failures are debuggable from
-            # outside (read it by mounting the rootfs).
+            # outside (read it by mounting the rootfs). Needs the
+            # systemd-journal group ownership + setgid bit or journald
+            # refuses to use it and silently stays volatile.
             mkdir -p "$CHROOT/var/log/journal"
+            chown 0:980 "$CHROOT/var/log/journal" 2>/dev/null || \
+                chroot "$CHROOT" chown 0:systemd-journal /var/log/journal 2>/dev/null || true
+            chmod 2755 "$CHROOT/var/log/journal"
+
+            # SteamOS fstab references its A/B atomic partset paths
+            # (/dev/disk/by-partsets/{self,shared}/...) which don't exist
+            # on a flat-rootfs flash — every mount unit fails and stalls
+            # local-fs.target dependencies (NetworkManager etc.).
+            sed -i '/by-partsets/s|^|#FLAT-ROOTFS-DISABLED# |' "$CHROOT/etc/fstab"
 
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
