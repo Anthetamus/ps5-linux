@@ -1386,9 +1386,9 @@ SHIM
             # launch — because the recovery image is meant to live as a
             # single-shot first-boot installer and the A/B atomic system
             # handles persistence. On our flat-rootfs build that wipe is
-            # the actual cause of the "Steam downloads ~493 MB every
-            # session" loop. Replace with one that just execs the real
-            # Steam binary with the deck flags.
+            # the cause of the "Steam downloads ~493 MB every session"
+            # loop. Replace with one that just execs the real Steam
+            # binary with the deck flags.
             if [ -f "$CHROOT/usr/bin/steam-jupiter" ]; then
                 mv "$CHROOT/usr/bin/steam-jupiter" "$CHROOT/usr/bin/steam-jupiter.orig"
                 cat > "$CHROOT/usr/bin/steam-jupiter" <<'SHIM'
@@ -1400,6 +1400,35 @@ exec /usr/lib/steam/steam -steamdeck -skipinitialbootstrap "$@"
 SHIM
                 chmod 755 "$CHROOT/usr/bin/steam-jupiter"
             fi
+
+            # Steam binary calls logind.Reboot via DBus directly after the
+            # bootstrap finishes downloading (its "apply the update by
+            # rebooting" flow that assumes Deck-style A/B atomic). The
+            # reboot happens BEFORE the bootstrap can mark itself
+            # complete, so next boot Steam still thinks installed=0 and
+            # re-downloads — loop. Block reboot/power-off from the deck
+            # user via polkit so Steam can't trigger it. Manual reboots
+            # via SSH/Konsole as root still work.
+            mkdir -p "$CHROOT/etc/polkit-1/rules.d"
+            cat > "$CHROOT/etc/polkit-1/rules.d/05-disable-deck-reboot.rules" <<'PK'
+// Block Steam (running as deck) from issuing reboot/poweroff via DBus.
+// On a real Steam Deck the A/B atomic update model wants Steam to be
+// able to "reboot to apply" — here it traps us in a download loop
+// because nothing actually applies. Manual reboots still work as root
+// (sudo reboot via SSH or Konsole in Desktop Mode).
+polkit.addRule(function(action, subject) {
+    if (subject.user === "deck" && (
+        action.id === "org.freedesktop.login1.reboot" ||
+        action.id === "org.freedesktop.login1.reboot-multiple-sessions" ||
+        action.id === "org.freedesktop.login1.power-off" ||
+        action.id === "org.freedesktop.login1.power-off-multiple-sessions" ||
+        action.id === "org.freedesktop.login1.set-reboot-to-firmware-setup"
+    )) {
+        return polkit.Result.NO;
+    }
+});
+PK
+            chmod 644 "$CHROOT/etc/polkit-1/rules.d/05-disable-deck-reboot.rules"
 
             if [ -f "$CHROOT/usr/bin/steamos-reboot" ]; then
                 mv "$CHROOT/usr/bin/steamos-reboot" "$CHROOT/usr/bin/steamos-reboot.orig"
