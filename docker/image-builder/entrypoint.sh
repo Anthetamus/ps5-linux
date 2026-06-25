@@ -1375,6 +1375,11 @@ SHIM
             # still pending, downloads again, reboots. Infinite loop.
             # Shim steamos-reboot so --reboot-other is a silent noop;
             # plain reboot still works.
+            # Skip Steam client's verify-files-then-update step on launch
+            # so the 493 MB client redownload doesn't fire every session.
+            sed -i 's|^steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui")|steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui" "-noverifyfiles")|' \
+                "$CHROOT/usr/lib/steamos/steam-launcher" 2>/dev/null || true
+
             if [ -f "$CHROOT/usr/bin/steamos-reboot" ]; then
                 mv "$CHROOT/usr/bin/steamos-reboot" "$CHROOT/usr/bin/steamos-reboot.orig"
                 cat > "$CHROOT/usr/bin/steamos-reboot" <<'SHIM'
