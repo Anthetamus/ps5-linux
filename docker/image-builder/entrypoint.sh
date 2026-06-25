@@ -1366,6 +1366,34 @@ SHIM
                 chmod 755 "$CHROOT/usr/bin/steamos-update"
             fi
 
+            # Even with steamos-update shimmed, the Steam Big Picture UI
+            # downloads the OS update tarball directly from
+            # update.steamos.cloud and calls steamos-reboot --reboot-other
+            # to apply it. --reboot-other is Valve's "switch active A/B
+            # partset slot then reboot" — since we have no partsets it
+            # just reboots into the same image, Steam sees the update
+            # still pending, downloads again, reboots. Infinite loop.
+            # Shim steamos-reboot so --reboot-other is a silent noop;
+            # plain reboot still works.
+            if [ -f "$CHROOT/usr/bin/steamos-reboot" ]; then
+                mv "$CHROOT/usr/bin/steamos-reboot" "$CHROOT/usr/bin/steamos-reboot.orig"
+                cat > "$CHROOT/usr/bin/steamos-reboot" <<'SHIM'
+#!/bin/bash
+# Shimmed for flat-rootfs PS5 build — no A/B partsets, so --reboot-other
+# (Steam OS-update apply path) is a noop. Plain reboot still works.
+case "${1:-}" in
+    --reboot-other)
+        echo "steamos-reboot: --reboot-other ignored (no A/B partsets)" >&2
+        exit 0
+        ;;
+    *)
+        exec /sbin/reboot "$@"
+        ;;
+esac
+SHIM
+                chmod 755 "$CHROOT/usr/bin/steamos-reboot"
+            fi
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
