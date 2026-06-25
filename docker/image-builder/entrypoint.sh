@@ -1332,6 +1332,28 @@ INITMODS
             chroot "$CHROOT" pacman-key --init 2>/dev/null || true
             chroot "$CHROOT" pacman-key --populate holo 2>/dev/null || true
 
+            # Disable the atomic OS updater. The Steam UI calls
+            # /usr/bin/steamos-update on session start, which tries to
+            # apply Valve's A/B atomic OTA via partsets we don't have +
+            # neptune kernel != our linux-ps5. Result: "Unable to
+            # download the required update" nag every session. Replace
+            # with a noop that returns "no update available" (exit 7)
+            # while honoring the --supports-duplicate-detection probe.
+            if [ -f "$CHROOT/usr/bin/steamos-update" ]; then
+                mv "$CHROOT/usr/bin/steamos-update" "$CHROOT/usr/bin/steamos-update.orig"
+                cat > "$CHROOT/usr/bin/steamos-update" <<'SHIM'
+#!/bin/bash
+# Disabled — flat-rootfs PS5 build can't apply SteamOS A/B atomic OTAs.
+if [ "$1" = "--supports-duplicate-detection" ]; then
+    echo "supports duplicate detection" >&2
+    exit 0
+fi
+echo "No update available (disabled — flat-rootfs PS5 build)" >&2
+exit 7
+SHIM
+                chmod 755 "$CHROOT/usr/bin/steamos-update"
+            fi
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
