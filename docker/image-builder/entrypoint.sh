@@ -1306,6 +1306,15 @@ INITMODS
             # local-fs.target dependencies (NetworkManager etc.).
             sed -i '/by-partsets/s|^|#FLAT-ROOTFS-DISABLED# |' "$CHROOT/etc/fstab"
 
+            # steamos-customizations also ships explicit .mount units for
+            # esp/efi/home that pull in partset-aware fsck + blockdev
+            # targets. Mask them so the 90-sec device-wait timeout
+            # doesn't show up as "A start job is running for /dev/disk/
+            # by-partsets/..." on every boot.
+            for u in esp.mount efi.mount home.mount; do
+                ln -sf /dev/null "$CHROOT/etc/systemd/system/$u"
+            done
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
