@@ -1380,6 +1380,27 @@ SHIM
             sed -i 's|^steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui")|steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui" "-noverifyfiles")|' \
                 "$CHROOT/usr/lib/steamos/steam-launcher" 2>/dev/null || true
 
+            # /usr/bin/steam → /usr/bin/steam-jupiter (symlink). The
+            # steam-jupiter wrapper is Valve's OOBE script that does
+            # `rm -rf ~/.steam ~/.local/share/Steam` at the top of every
+            # launch — because the recovery image is meant to live as a
+            # single-shot first-boot installer and the A/B atomic system
+            # handles persistence. On our flat-rootfs build that wipe is
+            # the actual cause of the "Steam downloads ~493 MB every
+            # session" loop. Replace with one that just execs the real
+            # Steam binary with the deck flags.
+            if [ -f "$CHROOT/usr/bin/steam-jupiter" ]; then
+                mv "$CHROOT/usr/bin/steam-jupiter" "$CHROOT/usr/bin/steam-jupiter.orig"
+                cat > "$CHROOT/usr/bin/steam-jupiter" <<'SHIM'
+#!/bin/bash
+# Patched for flat-rootfs PS5 build: skip the OOBE rm -rf so Steam state
+# persists across boots — no more 493 MB bootstrap redownload per session.
+set -euo pipefail
+exec /usr/lib/steam/steam -steamdeck -skipinitialbootstrap "$@"
+SHIM
+                chmod 755 "$CHROOT/usr/bin/steam-jupiter"
+            fi
+
             if [ -f "$CHROOT/usr/bin/steamos-reboot" ]; then
                 mv "$CHROOT/usr/bin/steamos-reboot" "$CHROOT/usr/bin/steamos-reboot.orig"
                 cat > "$CHROOT/usr/bin/steamos-reboot" <<'SHIM'
