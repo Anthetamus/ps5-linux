@@ -1285,6 +1285,15 @@ INITMODS
 
             rm -f "/lib/modules/$KVER"
 
+            # SteamOS recovery image ships without a default.target symlink and
+            # relies on the cmdline to set systemd.unit=. Without either,
+            # systemd hangs at "solid cursor on tty1" forever. Fix both so
+            # either path reaches graphical.target.
+            ln -sf /usr/lib/systemd/system/graphical.target "$CHROOT/etc/systemd/system/default.target"
+            # Persistent journal so post-boot failures are debuggable from
+            # outside (read it by mounting the rootfs).
+            mkdir -p "$CHROOT/var/log/journal"
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
