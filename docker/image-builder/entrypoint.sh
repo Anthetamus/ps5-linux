@@ -1324,6 +1324,14 @@ INITMODS
             # takes effect.
             rm -f "$CHROOT/etc/sddm.conf.d/zz-steamos-autologin.conf"
 
+            # The recovery image's pacman trust DB is populated for
+            # archlinux only — not the holo (SteamOS Valve CI) keys —
+            # so `pacman -Syu` on first boot fails every package with
+            # "unknown trust" from the GitLab CI Package Builder key.
+            # The holo-keyring package IS installed; just needs --populate.
+            chroot "$CHROOT" pacman-key --init 2>/dev/null || true
+            chroot "$CHROOT" pacman-key --populate holo 2>/dev/null || true
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
