@@ -1380,10 +1380,18 @@ SHIM
                 cat > "$CHROOT/usr/bin/steamos-reboot" <<'SHIM'
 #!/bin/bash
 # Shimmed for flat-rootfs PS5 build — no A/B partsets, so --reboot-other
-# (Steam OS-update apply path) is a noop. Plain reboot still works.
+# (Steam OS-update apply path) restarts SDDM instead of doing the A/B
+# slot switch + reboot. Gamescope-session relaunches cleanly into Steam
+# login. Plain reboot still works.
 case "${1:-}" in
     --reboot-other)
-        echo "steamos-reboot: --reboot-other ignored (no A/B partsets)" >&2
+        # Clear pending atomupd state so Steam does not immediately
+        # re-prompt for the same "update" on the next session.
+        rm -rf /var/lib/steamos-atomupd/.cache \
+               /home/.steamos/offload/var/lib/steamos-atomupd/.cache \
+               2>/dev/null || true
+        echo "steamos-reboot: --reboot-other -> sddm restart (no A/B partsets)" >&2
+        systemctl restart sddm
         exit 0
         ;;
     *)
