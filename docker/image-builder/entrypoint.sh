@@ -1315,6 +1315,15 @@ INITMODS
                 ln -sf /dev/null "$CHROOT/etc/systemd/system/$u"
             done
 
+            # The recovery image ships /etc/sddm.conf.d/zz-steamos-autologin.conf
+            # with Session=plasma — it's normally written when a Deck user
+            # picks "Switch to Desktop" from Steam, but the recovery image
+            # bakes it in pre-set to KDE. With it present, SDDM autologs
+            # into Plasma instead of the gamescope-wayland session. Remove
+            # so the steamdeck.conf default (gamescope-wayland.desktop)
+            # takes effect.
+            rm -f "$CHROOT/etc/sddm.conf.d/zz-steamos-autologin.conf"
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
