@@ -1332,6 +1332,18 @@ INITMODS
             chroot "$CHROOT" pacman-key --init 2>/dev/null || true
             chroot "$CHROOT" pacman-key --populate holo 2>/dev/null || true
 
+            # First-boot rootfs grow. Our build_image.sh writes a fixed-size
+            # rootfs (~14 GB), but the user flashes onto multi-hundred-GB USB
+            # drives. Without this, sda1 stays 11 GB and Steam/flatpak run
+            # out of space within an hour.
+            install -m 755 /repo/distros/arch/grow-rootfs \
+                "$CHROOT/usr/local/sbin/grow-rootfs"
+            install -m 644 /repo/distros/arch/grow-rootfs.service \
+                "$CHROOT/etc/systemd/system/grow-rootfs.service"
+            mkdir -p "$CHROOT/etc/systemd/system/local-fs.target.wants"
+            ln -sf ../grow-rootfs.service \
+                "$CHROOT/etc/systemd/system/local-fs.target.wants/grow-rootfs.service"
+
             # Disable the atomic OS updater. The Steam UI calls
             # /usr/bin/steamos-update on session start, which tries to
             # apply Valve's A/B atomic OTA via partsets we don't have +
