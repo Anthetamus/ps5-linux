@@ -1392,6 +1392,46 @@ INITMODS
             # takes effect.
             rm -f "$CHROOT/etc/sddm.conf.d/zz-steamos-autologin.conf"
 
+            # Replace /usr/bin/steamos-session-select with a dumb shim that
+            # writes the sddm autologin file directly + restarts sddm. The
+            # vendored version delegates to steamosctl/steamos-manager whose
+            # Steam Deck hardware code paths silently no-op on PS5 — the
+            # symptom is "Return to Gaming Mode just reloads Desktop" because
+            # the autologin Session= never actually changes. This shim bypasses
+            # the whole DBus dance.
+            if [ -f "$CHROOT/usr/bin/steamos-session-select" ]; then
+                mv "$CHROOT/usr/bin/steamos-session-select" \
+                   "$CHROOT/usr/bin/steamos-session-select.orig"
+                cat > "$CHROOT/usr/bin/steamos-session-select" <<'SHIM'
+#!/bin/bash
+# PS5-flat-rootfs shim: write the sddm autologin file directly and restart
+# sddm via the polkit-authorized helper. Skips steamosctl/steamos-manager
+# whose Deck-hardware assumptions fail silently on PS5.
+set -e
+session="${1:-gamescope}"
+case "$session" in
+    plasma-wayland|plasma-wayland-persistent) target="plasma.desktop"     ; type="wayland" ;;
+    plasma|plasma-x11|plasma-x11-persistent)  target="plasmax11.desktop"  ; type="x11"     ;;
+    gamescope|*)                              target="gamescope-wayland.desktop" ; type="wayland" ;;
+esac
+# zz- prefix sorts after the vendor steamos.conf so this file wins.
+pkexec /usr/bin/steamos-polkit-helpers/steamos-priv-write \
+    /etc/sddm.conf.d/zz-session.conf <<EOF
+[General]
+DisplayServer=$type
+
+[Autologin]
+User=deck
+Session=$target
+Relogin=true
+EOF
+# steamos-restart-sddm is a pre-authorized polkit helper that
+# kills+restarts sddm without needing sudo from the deck user.
+/usr/bin/steamos-polkit-helpers/steamos-restart-sddm
+SHIM
+                chmod 755 "$CHROOT/usr/bin/steamos-session-select"
+            fi
+
             # The recovery image's pacman trust DB is populated for
             # archlinux only — not the holo (SteamOS Valve CI) keys —
             # so `pacman -Syu` on first boot fails every package with
