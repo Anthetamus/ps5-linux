@@ -1323,6 +1323,33 @@ INITMODS
                           -name '*.bin.zst' -print0 2>/dev/null)
             echo ">> decompressed $fw_count firmware files"
 
+            # mkinitramfs runs BEFORE this point in the script and bakes
+            # the amdgpu module into the initramfs (per our modules list).
+            # But Debian's mkinitramfs does NOT copy /lib/firmware/* into
+            # the initramfs by default — so when amdgpu probes in early
+            # userspace (initramfs phase, before switch_root), it requests
+            # firmware from initramfs's /lib/firmware/ which doesn't have
+            # it → ENOENT → fatal GPU init → no display, identical
+            # symptom to the .zst-only-firmware bug above. Inject the
+            # decompressed amdgpu blobs INTO the initrd image now (it's
+            # a zstd cpio newc archive — extract, add, repack).
+            INITRD="$CHROOT/boot/efi/initrd.img"
+            if [ -f "$INITRD" ] && [ -d "$CHROOT/lib/firmware/amdgpu" ]; then
+                echo "=== SteamOS: inject amdgpu firmware into initramfs ==="
+                IWORK=$(mktemp -d)
+                ( cd "$IWORK" && zstd -dc "$INITRD" | cpio -idmu --quiet --no-absolute-filenames )
+                mkdir -p "$IWORK/usr/lib/firmware/amdgpu"
+                cp "$CHROOT/lib/firmware/amdgpu"/*.bin "$IWORK/usr/lib/firmware/amdgpu/" 2>/dev/null || true
+                # Some kernels probe /lib/firmware first, some /usr/lib/firmware.
+                # Make both reachable.
+                ln -sfn usr/lib/firmware "$IWORK/lib/firmware" 2>/dev/null || true
+                ( cd "$IWORK" && find . | cpio -o -H newc --quiet | zstd -19 --quiet ) > "$INITRD.new"
+                mv "$INITRD.new" "$INITRD"
+                cp "$INITRD" "$CHROOT/boot/initramfs-$KVER.img"
+                rm -rf "$IWORK"
+                echo ">> initramfs repacked with firmware ($(du -h "$INITRD" | cut -f1))"
+            fi
+
             # Persistent journal so post-boot failures are debuggable from
             # outside (read it by mounting the rootfs). Needs the
             # systemd-journal group ownership + setgid bit or journald
