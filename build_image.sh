@@ -45,7 +45,7 @@ done
 LINUX_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 LINUX_DEFAULT_DIR="$SCRIPT_DIR/work/linux"
 
-PATCHES_REPO="https://git.etawen.dev/mia/ps5-linux-patches.git"
+PATCHES_REPO="https://github.com/ps5-linux/ps5-linux-patches.git"
 PATCHES_DIR="$SCRIPT_DIR/work/ps5-linux-patches"
 
 if [ -z "$KERNEL_SRC" ]; then
