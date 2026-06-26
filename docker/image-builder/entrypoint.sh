@@ -1434,9 +1434,16 @@ SHIM
             # still pending, downloads again, reboots. Infinite loop.
             # Shim steamos-reboot so --reboot-other is a silent noop;
             # plain reboot still works.
-            # Skip Steam client's verify-files-then-update step on launch
-            # so the 493 MB client redownload doesn't fire every session.
-            sed -i 's|^steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui")|steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui" "-noverifyfiles")|' \
+            # Strip -steamos3 + -steampal from the gamescope-session launcher.
+            # These two flags are what makes the Steam client believe it's
+            # running on a real Deck with the A/B atomic update model, so
+            # after every bootstrap download Steam calls logind.Reboot to
+            # "apply" the update — on a flat-rootfs build the reboot does
+            # nothing and we just come back to the same image, loop forever.
+            # Keep -steamdeck (Big Picture UI fidelity) and -gamepadui
+            # (gamepad-driven UI). Also tack on -noverifyfiles so the
+            # 493 MB client redownload doesn't repeat every session.
+            sed -i 's|^steamargs=("-steamos3" "-steampal" "-steamdeck" "-gamepadui")|steamargs=("-steamdeck" "-gamepadui" "-noverifyfiles")|' \
                 "$CHROOT/usr/lib/steamos/steam-launcher" 2>/dev/null || true
 
             # /usr/bin/steam → /usr/bin/steam-jupiter (symlink). The
@@ -1452,10 +1459,14 @@ SHIM
                 mv "$CHROOT/usr/bin/steam-jupiter" "$CHROOT/usr/bin/steam-jupiter.orig"
                 cat > "$CHROOT/usr/bin/steam-jupiter" <<'SHIM'
 #!/bin/bash
-# Patched for flat-rootfs PS5 build: skip the OOBE rm -rf so Steam state
-# persists across boots — no more 493 MB bootstrap redownload per session.
+# Patched for flat-rootfs PS5 build:
+# - skip OOBE rm -rf so Steam state persists across the reboot Steam
+#   would otherwise fire post-bootstrap
+# - drop -steamdeck so this desktop entry doesn't trigger the Deck-
+#   specific reboot-to-apply update path either. Gaming Mode entry
+#   path keeps its UI flags via /usr/lib/steamos/steam-launcher.
 set -euo pipefail
-exec /usr/lib/steam/steam -steamdeck -skipinitialbootstrap "$@"
+exec /usr/lib/steam/steam -skipinitialbootstrap "$@"
 SHIM
                 chmod 755 "$CHROOT/usr/bin/steam-jupiter"
             fi
