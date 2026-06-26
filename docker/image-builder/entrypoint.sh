@@ -1301,6 +1301,15 @@ INITMODS
             ln -sf /usr/lib/systemd/system/sddm.service \
                 "$CHROOT/etc/systemd/system/graphical.target.wants/sddm.service"
 
+            # Switch-to-Desktop button: gamescope/Steam may invoke a
+            # session named literally "desktop". The recovery image only
+            # ships plasma.desktop + plasmax11.desktop sessions, so the
+            # "desktop" session lookup fails. Symlink desktop.desktop ->
+            # the Plasma sessions so any caller asking for "desktop" lands
+            # in Plasma.
+            ln -sfn plasma.desktop    "$CHROOT/usr/share/wayland-sessions/desktop.desktop"
+            ln -sfn plasmax11.desktop "$CHROOT/usr/share/xsessions/desktop.desktop"
+
             # AMD GPU firmware comes from the SteamOS rootfs as .bin.zst
             # (zstd-compressed). Our linux-ps5 7.0.10 kernel is built
             # WITHOUT CONFIG_FW_LOADER_COMPRESS_ZSTD=y so the kernel's
