@@ -1291,6 +1291,38 @@ INITMODS
             # either path reaches graphical.target.
             ln -sf /usr/lib/systemd/system/graphical.target "$CHROOT/etc/systemd/system/default.target"
 
+            # Enable sddm. The recovery image ships sddm.service in
+            # /usr/lib/systemd/system but NEVER symlinks it into
+            # graphical.target.wants — relies on a first-boot Valve setup
+            # script that we've cut out. Without this, graphical.target
+            # is reached but no display manager starts → black screen
+            # even with working GPU init.
+            mkdir -p "$CHROOT/etc/systemd/system/graphical.target.wants"
+            ln -sf /usr/lib/systemd/system/sddm.service \
+                "$CHROOT/etc/systemd/system/graphical.target.wants/sddm.service"
+
+            # AMD GPU firmware comes from the SteamOS rootfs as .bin.zst
+            # (zstd-compressed). Our linux-ps5 7.0.10 kernel is built
+            # WITHOUT CONFIG_FW_LOADER_COMPRESS_ZSTD=y so the kernel's
+            # firmware loader looks for the bare .bin only, fails -2,
+            # amdgpu logs "Fatal error during GPU init", no display.
+            # Decompress every firmware blob in place; keep the .zst
+            # alongside (cheap, harmless) so the kernel finds the .bin
+            # without us having to enumerate which specific blobs amdgpu
+            # asks for on this revision (currently pfp + sdma; could
+            # grow). Side benefit: covers wifi/bluetooth/etc firmware
+            # for free.
+            echo "=== SteamOS: decompress *.bin.zst firmware (kernel can't load compressed) ==="
+            fw_count=0
+            while IFS= read -r -d '' zst; do
+                out="${zst%.zst}"
+                if [ ! -e "$out" ]; then
+                    zstd -dq -o "$out" "$zst" && fw_count=$((fw_count+1))
+                fi
+            done < <(find "$CHROOT/lib/firmware" "$CHROOT/usr/lib/firmware" \
+                          -name '*.bin.zst' -print0 2>/dev/null)
+            echo ">> decompressed $fw_count firmware files"
+
             # Persistent journal so post-boot failures are debuggable from
             # outside (read it by mounting the rootfs). Needs the
             # systemd-journal group ownership + setgid bit or journald
@@ -1797,6 +1829,15 @@ sync
 echo "=== Assembling boot partition ==="
 mv /tmp/usb_root/boot/efi/* /tmp/usb_efi/ 2>/dev/null || true
 sed "s|__DISTRO__|$ROOT_LABEL|" /repo/boot/cmdline.txt > /tmp/usb_efi/cmdline.txt
+case "$DISTRO" in
+    steamos)
+        # Failsafe: even with default.target symlinked to graphical.target,
+        # some early-userspace paths re-pick multi-user.target if the
+        # symlink isn't readable yet. The cmdline override is read first
+        # and bypasses that race.
+        sed -i 's/$/ systemd.unit=graphical.target/' /tmp/usb_efi/cmdline.txt
+        ;;
+esac
 cp /repo/boot/vram.txt     /tmp/usb_efi/
 cp /repo/boot/kexec.sh     /tmp/usb_efi/
 sync
