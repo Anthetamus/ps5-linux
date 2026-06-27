@@ -1,6 +1,13 @@
 #!/bin/bash
 # Grows the root partition + filesystem to fill the disk on first boot.
 # Self-disables after success.
+#
+# Uses sfdisk + partx + resize2fs (all in util-linux + e2fsprogs, both
+# present in the minimal Arch/SteamOS base). Earlier versions called
+# growpart from cloud-utils — but that package isn't in the SteamOS
+# recovery image, so the unit failed with "growpart: command not found"
+# and rootfs stayed at the dd'd image size (~14 GB) on any disk larger
+# than that.
 set -e
 
 ROOT_DEV=$(findmnt -no SOURCE /)
@@ -8,25 +15,31 @@ DISK="/dev/$(lsblk -ndo PKNAME "$ROOT_DEV")"
 PART_NUM=$(cat /sys/class/block/$(basename "$ROOT_DEV")/partition)
 
 # Our images dd at their built size (~14 GB) onto a much larger USB. The GPT
-# backup header is therefore at byte ~built-size, not at end of disk.
-# parted refuses non-interactively (-s) on that warning, so sgdisk -e moves
-# the backup header to end-of-disk first.
+# backup header is therefore at byte ~built-size, not at end of disk. Move
+# the backup header to end-of-disk first so partition table growth works.
 sgdisk -e "$DISK"
 
 # If a previous flash left behind partitions BEYOND our rootfs + boot pair
 # (e.g. a stale `linux-home` partset at part 3 from a prior SteamOS install
-# on the same drive), growpart refuses to extend the rootfs into the space
+# on the same drive), the partition extend refuses to grow into the space
 # already claimed by the leftover partition. Delete every partition with a
 # number higher than 2 — we only ever create partitions 1 (rootfs) + 2 (boot).
-# Use parted machine-readable output to enumerate.
 for n in $(parted -ms "$DISK" print 2>/dev/null \
            | awk -F: 'NR>2 && $1+0>2 {print $1}'); do
     sgdisk -d "$n" "$DISK" 2>/dev/null || true
 done
 
-partprobe "$DISK"
-sleep 1
-growpart "$DISK" "$PART_NUM"
+# sfdisk `,+` extends partition $PART_NUM to consume all available free
+# space. Works on a mounted/live partition because sfdisk only rewrites
+# the GPT entry (kernel re-read of the partition table comes next).
+echo ",+" | sfdisk --no-reread -N "$PART_NUM" "$DISK"
+
+# Make the kernel pick up the new partition size without unmounting:
+# partx --update is the live equivalent of partprobe (which fails with
+# EBUSY when the partition is mounted).
+partx -u "$DISK"
+
+# Online ext4 grow.
 resize2fs "$ROOT_DEV"
 
 systemctl disable grow-rootfs.service

@@ -1387,10 +1387,20 @@ INITMODS
             # with Session=plasma — it's normally written when a Deck user
             # picks "Switch to Desktop" from Steam, but the recovery image
             # bakes it in pre-set to KDE. With it present, SDDM autologs
-            # into Plasma instead of the gamescope-wayland session. Remove
-            # so the steamdeck.conf default (gamescope-wayland.desktop)
-            # takes effect.
-            rm -f "$CHROOT/etc/sddm.conf.d/zz-steamos-autologin.conf"
+            # into Plasma instead of the gamescope-wayland session.
+            #
+            # Just `rm` isn't enough: on first boot ps5-gamescope-recovery
+            # (or steam-jupiter falling back to KDE because gamescope can't
+            # grab a display) writes this file back with Session=plasma,
+            # and we land in Plasma on every subsequent boot too.
+            # Overwrite with gamescope-wayland.desktop so even when the
+            # file gets recreated by Steam/recovery, we still autologin
+            # into Big Picture.
+            mkdir -p "$CHROOT/etc/sddm.conf.d"
+            cat > "$CHROOT/etc/sddm.conf.d/zz-steamos-autologin.conf" <<'EOF'
+[Autologin]
+Session=gamescope-wayland.desktop
+EOF
 
             # Replace /usr/bin/steamos-session-select with a dumb shim that
             # writes the sddm autologin file directly + restarts sddm. The
