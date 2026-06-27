@@ -1677,6 +1677,29 @@ SHIM
                 chmod 755 "$CHROOT/usr/bin/steamos-reboot"
             fi
 
+            # FINAL OVERRIDE — the earlier zz-steamos-autologin.conf write at
+            # ~line 1418 isn't sticking on the flashed image (file shows the
+            # recovery image's stock mtime Jun 18 / Session=plasma after boot).
+            # Something between that write and the partition copy at line ~2014
+            # is overlaying it back. Last-write-wins: redo it here at the end of
+            # the steamos block, and ALSO drop a sentinel zzz-session-override.conf
+            # that sorts even later — same one our shim writes — so SDDM merge
+            # order absolutely lands on gamescope-wayland for first boot.
+            mkdir -p "$CHROOT/etc/sddm.conf.d"
+            cat > "$CHROOT/etc/sddm.conf.d/zz-steamos-autologin.conf" <<'AUTOLOGIN_END'
+[Autologin]
+Session=gamescope-wayland.desktop
+AUTOLOGIN_END
+            cat > "$CHROOT/etc/sddm.conf.d/zzz-session-override.conf" <<'OVERRIDE_END'
+[Autologin]
+User=deck
+Session=gamescope-wayland.desktop
+Relogin=true
+OVERRIDE_END
+            echo "=== verify autologin file content ==="
+            ls -la "$CHROOT/etc/sddm.conf.d/"
+            grep -H Session= "$CHROOT/etc/sddm.conf.d/"*.conf || true
+
             echo "=== SteamOS: rootfs prepared at \$CHROOT ($(du -sh "$CHROOT" | cut -f1)), initrd $(du -h "$CHROOT/boot/efi/initrd.img" | cut -f1) ==="
             ;;
         *)
