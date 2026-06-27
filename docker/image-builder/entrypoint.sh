@@ -1279,6 +1279,23 @@ INITMODS
             # regardless of what's loaded in the build container.
             sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
 
+            # amdgpu options for the PS5 Oberon GPU: dpm=0 keeps HDMI alive
+            # (DPM transitions stall the DP→HDMI bridge into a stuck-low
+            # state, displayed as a black screen the moment KWin tries to
+            # take DRM master from gamescope — exact symptom: 'failed to
+            # display topology' in Plasma + black screen with cursor after
+            # Switch-to-Desktop). gpu_recovery=0 avoids the linux-ps5
+            # patched recovery path that hard-faults on Oberon. Bazzite
+            # already ships these for the same reason.
+            #
+            # Land in both initramfs and rootfs so amdgpu picks them up at
+            # both probe times (early initramfs phase + post-switch_root).
+            mkdir -p "$CHROOT/etc/modprobe.d" /etc/modprobe.d
+            cat > "$CHROOT/etc/modprobe.d/ps5-amdgpu.conf" <<'AMDGPU'
+options amdgpu dpm=0 gpu_recovery=0
+AMDGPU
+            cp "$CHROOT/etc/modprobe.d/ps5-amdgpu.conf" /etc/modprobe.d/ps5-amdgpu.conf
+
             mkinitramfs -k "$KVER" -o "$CHROOT/boot/efi/initrd.img"
             # Also drop a copy at the standard location inside the rootfs.
             cp "$CHROOT/boot/efi/initrd.img" "$CHROOT/boot/initramfs-$KVER.img"
