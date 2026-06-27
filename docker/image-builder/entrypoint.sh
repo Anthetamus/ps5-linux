@@ -30,7 +30,7 @@ else
 #
 # <file system> <mount point>   <type>  <options>       <dump>  <pass>
 LABEL=$ROOT_LABEL / ext4 defaults 0 1
-LABEL=$EFI_LABEL /boot/efi vfat defaults 0 1
+LABEL=$EFI_LABEL /boot/efi vfat defaults,nofail,x-systemd.device-timeout=10s 0 2
 EOF
     cp /repo/distros/${DISTRO}/nm-dns.conf       "$STAGING/" 2>/dev/null || true
 
