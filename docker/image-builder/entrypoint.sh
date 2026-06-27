@@ -1433,36 +1433,36 @@ EOF
                 cat > "$CHROOT/usr/bin/steamos-session-select" <<'SHIM'
 #!/bin/bash
 # PS5-flat-rootfs shim: write a sddm autologin override directly +
-# restart sddm via the polkit-authorized helper. Bypasses the vendored
-# script that delegates to steamosctl/steamos-manager (which silently
-# no-ops on PS5 hardware paths).
+# restart sddm. Bypasses the vendored script that delegates to
+# steamosctl/steamos-manager (which silently no-ops on PS5).
 #
-# Conf filename intentionally 'zzz-session-override.conf':
+# Uses sudo (deck has passwordless sudo on this build) rather than
+# the recovery image's pkexec → steamos-priv-write path: that helper
+# only whitelists /sys/class/backlight and similar paths, NOT
+# /etc/sddm.conf.d, so any pkexec write attempt fails with an
+# unbound-variable error from the priv-write script. Sudo is simpler
+# and works from any context (Konsole, desktop shortcut, even SSH).
+#
+# Conf filename 'zzz-session-override.conf':
 #   * sorts AFTER zz-steamos-autologin.conf so this file wins precedence
 #   * does NOT match sddm's ExecStartPre 'rm /etc/sddm.conf.d/zzt-...'
 #     drop-in pattern, so the override survives systemctl restart sddm
 set -e
 session="${1:-gamescope}"
 case "$session" in
-    plasma-wayland|plasma-wayland-persistent) target="plasma.desktop"            ; type="wayland" ;;
-    plasma|plasma-x11|plasma-x11-persistent)  target="plasmax11.desktop"         ; type="x11"     ;;
-    desktop)                                  target="plasma.desktop"            ; type="wayland" ;;
-    gamescope)                                target="gamescope-wayland.desktop" ; type="wayland" ;;
-    *)                                        target="gamescope-wayland.desktop" ; type="wayland" ;;
+    plasma-wayland|plasma-wayland-persistent)  target="plasma.desktop"            ;;
+    plasma|plasma-x11|plasma-x11-persistent)   target="plasmax11.desktop"         ;;
+    desktop)                                   target="plasma.desktop"            ;;
+    gamescope)                                 target="gamescope-wayland.desktop" ;;
+    *)                                         target="gamescope-wayland.desktop" ;;
 esac
-pkexec /usr/bin/steamos-polkit-helpers/steamos-priv-write \
-    /etc/sddm.conf.d/zzz-session-override.conf <<EOF
-[General]
-DisplayServer=$type
-
+sudo tee /etc/sddm.conf.d/zzz-session-override.conf >/dev/null <<EOF
 [Autologin]
 User=deck
 Session=$target
 Relogin=true
 EOF
-# steamos-restart-sddm is a pre-authorized polkit helper that
-# kills+restarts sddm without needing sudo from the deck user.
-/usr/bin/steamos-polkit-helpers/steamos-restart-sddm
+sudo systemctl restart sddm
 SHIM
                 chmod 755 "$CHROOT/usr/bin/steamos-session-select"
             fi
