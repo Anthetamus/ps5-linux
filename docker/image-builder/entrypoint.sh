@@ -1308,6 +1308,18 @@ AMDGPU
             # either path reaches graphical.target.
             ln -sf /usr/lib/systemd/system/graphical.target "$CHROOT/etc/systemd/system/default.target"
 
+            # sshd: recovery image ships it disabled. We want it on by
+            # default so we can ssh in from the LAN without poking the
+            # console. Enable + set deck's password to 'deck' (matches
+            # the build-time convention used for the other distros).
+            mkdir -p "$CHROOT/etc/systemd/system/multi-user.target.wants"
+            ln -sf /usr/lib/systemd/system/sshd.service \
+                "$CHROOT/etc/systemd/system/multi-user.target.wants/sshd.service"
+            chroot "$CHROOT" /usr/bin/bash -c 'echo "deck:deck" | chpasswd' 2>/dev/null || \
+                chroot "$CHROOT" /bin/sh -c 'echo "deck:deck" | chpasswd' 2>/dev/null || true
+            # also unlock the account in case it's locked
+            chroot "$CHROOT" /usr/bin/passwd -u deck 2>/dev/null || true
+
             # Enable sddm. The recovery image ships sddm.service in
             # /usr/lib/systemd/system but NEVER symlinks it into
             # graphical.target.wants — relies on a first-boot Valve setup
