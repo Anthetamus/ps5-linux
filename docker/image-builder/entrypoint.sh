@@ -1509,8 +1509,17 @@ SHIM
             cp /repo/distros/steamos/return-to-gaming-mode.desktop \
                 "$CHROOT/usr/share/applications/return-to-gaming-mode.desktop"
             chmod 755 "$CHROOT/home/deck/Desktop/Return.desktop"
-            # Make sure deck:deck owns the homedir entry
-            chroot "$CHROOT" chown deck:deck /home/deck/Desktop/Return.desktop 2>/dev/null || true
+
+            # The recovery image ships /home/deck owned by root:root (the
+            # vendor install flow chowns it later during first-boot OOBE,
+            # which we've masked out). Without this fix, KDE Plasma fails
+            # to create /home/deck/.config on first login — error popup:
+            # "Configuration file /home/deck/.config/kcminitrc not writable.
+            # Please contact your system administrator."
+            # Chown the whole tree to deck:deck (uid/gid 1000) so Plasma
+            # init can write its caches/configs.
+            chroot "$CHROOT" chown -R deck:deck /home/deck 2>/dev/null || \
+                chown -R 1000:1000 "$CHROOT/home/deck"
 
             # The recovery image's pacman trust DB is populated for
             # archlinux only — not the holo (SteamOS Valve CI) keys —
