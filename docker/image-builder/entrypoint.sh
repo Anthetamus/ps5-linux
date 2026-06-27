@@ -1404,12 +1404,23 @@ AMDGPU
             # local-fs.target dependencies (NetworkManager etc.).
             sed -i '/by-partsets/s|^|#FLAT-ROOTFS-DISABLED# |' "$CHROOT/etc/fstab"
 
+            # …but we still need /efi mounted at boot. ps5-stage-firmware
+            # reads the NXP IW620 WLAN blob from /boot/efi/lib/nxp/, and
+            # cmdline.txt / kexec.sh / bzImage live there too. Append a
+            # label-based mount line so the FAT boot partition is up
+            # before sysinit.target. /boot/efi is a symlink to /efi in
+            # the recovery image; mount the canonical target.
+            cat >> "$CHROOT/etc/fstab" <<FSTAB
+LABEL=$EFI_LABEL /efi vfat defaults,nofail,umask=0077 0 2
+FSTAB
+
             # steamos-customizations also ships explicit .mount units for
             # esp/efi/home that pull in partset-aware fsck + blockdev
-            # targets. Mask them so the 90-sec device-wait timeout
-            # doesn't show up as "A start job is running for /dev/disk/
-            # by-partsets/..." on every boot.
-            for u in esp.mount efi.mount home.mount; do
+            # targets. Mask esp.mount + home.mount (we don't have those
+            # partitions), but leave efi.mount alone — it'd race the
+            # fstab line above. systemd just generates a fresh efi.mount
+            # from our fstab entry.
+            for u in esp.mount home.mount; do
                 ln -sf /dev/null "$CHROOT/etc/systemd/system/$u"
             done
 

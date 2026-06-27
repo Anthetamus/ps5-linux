@@ -1,8 +1,13 @@
 [Unit]
 Description=Bridge NXP IW620 wifi firmware from /boot/efi/lib to /lib/firmware
 Documentation=https://github.com/ps5-linux/ps5-linux-mwifiex
+# Run after the FAT boot partition is mounted (otherwise the condition
+# below sees the unmounted /boot/efi symlink target and silently skips).
+# Still ordered before systemd-modules-load so moal can request_firmware()
+# successfully when it's autoloaded.
+After=local-fs.target
+Wants=local-fs.target
 ConditionPathExists=/boot/efi/lib/nxp/pcieuartiw620_combo_v1.bin
-DefaultDependencies=no
 Before=systemd-modules-load.service systemd-udev-trigger.service
 Wants=systemd-modules-load.service
 
@@ -10,6 +15,9 @@ Wants=systemd-modules-load.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/ps5-iw620-firmware-install
+# Reload the driver if it already loaded without firmware (race between
+# this service and udev-triggered moal autoload).
+ExecStartPost=-/bin/sh -c 'modprobe -r moal mlan 2>/dev/null; modprobe moal 2>/dev/null || true'
 
 [Install]
 WantedBy=sysinit.target
