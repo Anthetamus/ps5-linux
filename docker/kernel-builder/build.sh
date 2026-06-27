@@ -60,6 +60,28 @@ git clone --quiet https://github.com/ps5-linux/ps5-linux-mwifiex.git /tmp/mwifie
 git -C /tmp/mwifiex-ps5 checkout --quiet "$MWIFIEX_REF"
 git clone --quiet --depth 1 --branch "$NXP_REF" https://github.com/nxp-imx/mwifiex.git /tmp/mwifiex-nxp
 git -C /tmp/mwifiex-nxp apply /tmp/mwifiex-ps5/ps5-iw620.patch
+
+# As of mwifiex commit cecdc29 (2026-06-23) upstream ships additional
+# patches in its install.sh: a command-timeout recovery patch and a
+# kernel 7.1 cfg80211 API compat patch. We don't use install.sh (its
+# version detection is `uname -r` which reflects the BUILD HOST kernel
+# on a Docker runner, never the target), so apply the extras here.
+#
+# Detect target kernel major.minor from /src/Makefile (the kernel
+# source we're building against), not uname -r.
+if [ -f /tmp/mwifiex-ps5/ps5-iw620-cmd-timeout-recover.patch ]; then
+    echo "  + applying cmd-timeout-recover patch"
+    git -C /tmp/mwifiex-nxp apply /tmp/mwifiex-ps5/ps5-iw620-cmd-timeout-recover.patch
+fi
+if [ -f /tmp/mwifiex-ps5/ps5-iw620-kernel71-compat.patch ]; then
+    KMAJ=$(awk -F= '/^VERSION/{print $2}' /src/Makefile | tr -d ' ')
+    KMIN=$(awk -F= '/^PATCHLEVEL/{print $2}' /src/Makefile | tr -d ' ')
+    if [ "${KMAJ:-0}" -gt 7 ] || { [ "${KMAJ:-0}" = "7" ] && [ "${KMIN:-0}" -ge 1 ]; }; then
+        echo "  + applying kernel 7.1 cfg80211 compat patch (target kernel $KMAJ.$KMIN)"
+        git -C /tmp/mwifiex-nxp apply /tmp/mwifiex-ps5/ps5-iw620-kernel71-compat.patch
+    fi
+fi
+
 make -C /tmp/mwifiex-nxp CONFIG_OBJTOOL= KERNELDIR=/src ARCH=x86 -j"$(nproc)"
 
 mkdir -p "/out/staging/lib/modules/$KVER/extra/ps5-iw620"
