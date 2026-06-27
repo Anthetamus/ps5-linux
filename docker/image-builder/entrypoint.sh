@@ -1301,14 +1301,15 @@ INITMODS
             ln -sf /usr/lib/systemd/system/sddm.service \
                 "$CHROOT/etc/systemd/system/graphical.target.wants/sddm.service"
 
-            # Switch-to-Desktop button: gamescope/Steam may invoke a
-            # session named literally "desktop". The recovery image only
-            # ships plasma.desktop + plasmax11.desktop sessions, so the
-            # "desktop" session lookup fails. Symlink desktop.desktop ->
-            # the Plasma sessions so any caller asking for "desktop" lands
-            # in Plasma.
-            ln -sfn plasma.desktop    "$CHROOT/usr/share/wayland-sessions/desktop.desktop"
-            ln -sfn plasmax11.desktop "$CHROOT/usr/share/xsessions/desktop.desktop"
+            # Switch-to-Desktop / Return-to-Gaming buttons: gamescope/Steam
+            # and steamos-manager may invoke a session named literally
+            # "desktop" or "gamescope" (bare aliases) — those land both in
+            # SDDM's session lookup AND in our steamos-session-select shim
+            # below. Add symlinks so the SDDM lookup path resolves, and
+            # match the same naming below in the shim's case statement.
+            ln -sfn plasma.desktop             "$CHROOT/usr/share/wayland-sessions/desktop.desktop"
+            ln -sfn plasmax11.desktop          "$CHROOT/usr/share/xsessions/desktop.desktop"
+            ln -sfn gamescope-wayland.desktop  "$CHROOT/usr/share/wayland-sessions/gamescope.desktop"
 
             # AMD GPU firmware comes from the SteamOS rootfs as .bin.zst
             # (zstd-compressed). Our linux-ps5 7.0.10 kernel is built
@@ -1420,9 +1421,11 @@ EOF
 set -e
 session="${1:-gamescope}"
 case "$session" in
-    plasma-wayland|plasma-wayland-persistent) target="plasma.desktop"     ; type="wayland" ;;
-    plasma|plasma-x11|plasma-x11-persistent)  target="plasmax11.desktop"  ; type="x11"     ;;
-    gamescope|*)                              target="gamescope-wayland.desktop" ; type="wayland" ;;
+    plasma-wayland|plasma-wayland-persistent) target="plasma.desktop"            ; type="wayland" ;;
+    plasma|plasma-x11|plasma-x11-persistent)  target="plasmax11.desktop"         ; type="x11"     ;;
+    desktop)                                  target="plasma.desktop"            ; type="wayland" ;;
+    gamescope)                                target="gamescope-wayland.desktop" ; type="wayland" ;;
+    *)                                        target="gamescope-wayland.desktop" ; type="wayland" ;;
 esac
 # zz- prefix sorts after the vendor steamos.conf so this file wins.
 pkexec /usr/bin/steamos-polkit-helpers/steamos-priv-write \
