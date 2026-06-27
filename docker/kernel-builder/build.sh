@@ -96,13 +96,13 @@ softdep moal pre: cfg80211 mlan
 options moal fw_name=nxp/pcieuartiw620_combo_v1.bin pcie_int_mode=1 drv_mode=1 cfg80211_wext=4 sta_name=mlan ext_scan=1 auto_fw_reload=0 wifi_reset_config=0 sched_scan=0 ps_mode=2 auto_ds=2 amsdu_disable=1
 MODPROBE
 
-# Auto-load moal at boot. The NXP OOT driver doesn't expose a PCI
-# MODULE_DEVICE_TABLE() that udev coldplug recognises, so without this
-# the user has to `sudo modprobe moal` to bring WLAN up.
-mkdir -p /out/staging/etc/modules-load.d
-cat > /out/staging/etc/modules-load.d/ps5-iw620.conf <<'EOF'
-moal
-EOF
+# Do NOT auto-load moal at boot via /etc/modules-load.d/. That used to
+# race with the firmware-staging service (moal loads before firmware is
+# copied from /boot/efi → request_firmware fails → driver fails).
+# Instead, ps5-iw620-firmware.service runs at multi-user.target, after
+# /boot/efi is mounted, and does both: copy firmware + modprobe moal.
+# See distros/shared/ps5-iw620-firmware{.service,-install}.
+rm -f /out/staging/etc/modules-load.d/ps5-iw620.conf 2>/dev/null || true
 
 # Firmware staging. The PS5 WLAN firmware blob
 # (nxp/pcieuartiw620_combo_v1.bin) is placed on the FAT32 EFI partition

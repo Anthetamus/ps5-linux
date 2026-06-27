@@ -1,18 +1,31 @@
 #!/bin/sh
-# Move PS5 NXP IW620 wifi firmware from the FAT boot partition (where the
-# ps5-linux-loader payload dumps it post-jailbreak) into /lib/firmware so
-# moal can find it. mv (not cp) so the FAT copy is reclaimed; the loader
-# re-dumps to /boot/efi/lib/ on the next exploit run anyway.
+# Copy PS5 NXP IW620 firmware from the FAT boot partition (where
+# ps5-linux-loader dumps it post-jailbreak) into /lib/firmware, then
+# modprobe moal so the modprobe.d blacklist doesn't keep wifi down.
 #
-# Idempotent — if /boot/efi/lib/nxp/ is empty (typical post-first-boot)
-# the ConditionPathExists in the unit short-circuits and this never runs.
+# Service runs at multi-user.target with RequiresMountsFor=/boot/efi,
+# so /boot/efi is guaranteed mounted. Idempotent — re-runs are no-ops
+# once firmware is in /lib/firmware/.
 set -eu
-SRC=/boot/efi/lib/nxp/pcieuartiw620_combo_v1.bin
-DST=/lib/firmware/nxp/pcieuartiw620_combo_v1.bin
-[ -f "$SRC" ] || exit 0
-mkdir -p "$(dirname "$DST")"
-# Cross-filesystem mv (FAT → ext4) is copy + delete under the hood.
-mv -f "$SRC" "$DST"
-chmod 0644 "$DST"
-# Tell udev to retry firmware load in case moal was already up + failed.
-udevadm trigger --action=add 2>/dev/null || true
+FW_NAME=nxp/pcieuartiw620_combo_v1.bin
+FW_DST=/lib/firmware/$FW_NAME
+
+FW_SRC=
+for candidate in "/boot/efi/lib/$FW_NAME" "/boot/lib/$FW_NAME"; do
+    [ -f "$candidate" ] && { FW_SRC="$candidate"; break; }
+done
+
+if [ -n "$FW_SRC" ]; then
+    install -D -m 0644 "$FW_SRC" "$FW_DST"
+fi
+
+if [ ! -f "$FW_DST" ]; then
+    echo "ps5-iw620-firmware-install: $FW_NAME not found on /boot/efi; skipping moal load"
+    exit 0
+fi
+
+modprobe -r moal mlan 2>/dev/null || true
+modprobe cfg80211 2>/dev/null || true
+modprobe moal 2>/dev/null || true
+rfkill unblock all 2>/dev/null || true
+nmcli radio wifi on 2>/dev/null || true
