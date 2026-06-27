@@ -1432,9 +1432,15 @@ EOF
                    "$CHROOT/usr/bin/steamos-session-select.orig"
                 cat > "$CHROOT/usr/bin/steamos-session-select" <<'SHIM'
 #!/bin/bash
-# PS5-flat-rootfs shim: write the sddm autologin file directly and restart
-# sddm via the polkit-authorized helper. Skips steamosctl/steamos-manager
-# whose Deck-hardware assumptions fail silently on PS5.
+# PS5-flat-rootfs shim: write a sddm autologin override directly +
+# restart sddm via the polkit-authorized helper. Bypasses the vendored
+# script that delegates to steamosctl/steamos-manager (which silently
+# no-ops on PS5 hardware paths).
+#
+# Conf filename intentionally 'zzz-session-override.conf':
+#   * sorts AFTER zz-steamos-autologin.conf so this file wins precedence
+#   * does NOT match sddm's ExecStartPre 'rm /etc/sddm.conf.d/zzt-...'
+#     drop-in pattern, so the override survives systemctl restart sddm
 set -e
 session="${1:-gamescope}"
 case "$session" in
@@ -1444,9 +1450,8 @@ case "$session" in
     gamescope)                                target="gamescope-wayland.desktop" ; type="wayland" ;;
     *)                                        target="gamescope-wayland.desktop" ; type="wayland" ;;
 esac
-# zz- prefix sorts after the vendor steamos.conf so this file wins.
 pkexec /usr/bin/steamos-polkit-helpers/steamos-priv-write \
-    /etc/sddm.conf.d/zz-session.conf <<EOF
+    /etc/sddm.conf.d/zzz-session-override.conf <<EOF
 [General]
 DisplayServer=$type
 
@@ -1461,6 +1466,51 @@ EOF
 SHIM
                 chmod 755 "$CHROOT/usr/bin/steamos-session-select"
             fi
+
+            # Steam Big Picture's Power-Menu "Switch to Desktop" button
+            # fires a dbus call:
+            #     dbus-send --system --dest=org.freedesktop.DisplayManager \
+            #         /org/freedesktop/DisplayManager/Seat0 \
+            #         org.freedesktop.DisplayManager.Seat.SwitchToUser \
+            #         string:doorstop string:<session>
+            # On the real Steam Deck this lands in Valve's patched SDDM
+            # which writes /etc/sddm.conf.d/zzt-steamos-temp-login.conf.
+            # Stock Arch SDDM (what the recovery image ships) accepts the
+            # call but does nothing useful with it — the button is a no-op,
+            # and re-adding -steamos3 to the Steam launcher to route the
+            # button through our shim triggers Steam's A/B atomic-update
+            # reboot loop (commit 11cdddd).
+            #
+            # Workaround: a tiny daemon that BecomeMonitor()s the system
+            # bus, catches the SwitchToUser call, and runs the same
+            # zzz-session-override.conf write + sddm restart that our shim
+            # does. Steam's button now works without the -steamos3 flag.
+            mkdir -p "$CHROOT/usr/local/sbin" "$CHROOT/etc/systemd/system"
+            install -m 755 /repo/distros/steamos/steam-session-switch-listener.py \
+                "$CHROOT/usr/local/sbin/steam-session-switch-listener" 2>/dev/null \
+                || cp /repo/distros/steamos/steam-session-switch-listener.py \
+                      "$CHROOT/usr/local/sbin/steam-session-switch-listener"
+            chmod +x "$CHROOT/usr/local/sbin/steam-session-switch-listener"
+            cp /repo/distros/steamos/steam-session-switch-listener.service \
+                "$CHROOT/etc/systemd/system/steam-session-switch-listener.service"
+            mkdir -p "$CHROOT/etc/systemd/system/multi-user.target.wants"
+            ln -sf ../steam-session-switch-listener.service \
+                "$CHROOT/etc/systemd/system/multi-user.target.wants/steam-session-switch-listener.service"
+
+            # Replace the recovery image's broken Return.desktop. The vendor
+            # shortcut delegates to steamosctl, which silently no-ops on
+            # PS5. Ours calls steamos-session-select gamescope directly
+            # (our shim above does the real work). Drop it on deck's
+            # Desktop AND in /usr/share/applications so it's discoverable
+            # from the app menu too.
+            mkdir -p "$CHROOT/home/deck/Desktop" "$CHROOT/usr/share/applications"
+            cp /repo/distros/steamos/return-to-gaming-mode.desktop \
+                "$CHROOT/home/deck/Desktop/Return.desktop"
+            cp /repo/distros/steamos/return-to-gaming-mode.desktop \
+                "$CHROOT/usr/share/applications/return-to-gaming-mode.desktop"
+            chmod 755 "$CHROOT/home/deck/Desktop/Return.desktop"
+            # Make sure deck:deck owns the homedir entry
+            chroot "$CHROOT" chown deck:deck /home/deck/Desktop/Return.desktop 2>/dev/null || true
 
             # The recovery image's pacman trust DB is populated for
             # archlinux only — not the holo (SteamOS Valve CI) keys —
