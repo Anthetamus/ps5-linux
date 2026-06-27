@@ -374,6 +374,39 @@ actions:
     EOF
     fi
 
+- trigger: post-files
+  action: |-
+    #!/bin/bash
+    # Spoof /etc/os-release as SteamOS so Steam Big Picture's
+    # Plat_IsSteamOS() check passes and the "Switch to Desktop" power-menu
+    # button wires up to steamos-session-select. Without ID=steamos, BPM
+    # silently no-ops the button (no exec, no dbus call). ID_LIKE=arch is
+    # kept so pacman / arch tools still recognise the platform.
+    set -eu
+    cat > /etc/os-release <<OSEOF
+    NAME="SteamOS"
+    PRETTY_NAME="SteamOS"
+    ID=steamos
+    ID_LIKE=arch
+    BUILD_ID=rolling
+    VARIANT=Holo
+    VARIANT_ID=steamdeck
+    ANSI_COLOR="1;35"
+    HOME_URL="https://www.steamdeck.com/"
+    LOGO=steamdeck-logo
+    OSEOF
+
+    # Stub jupiter-check-support to return success. steamui.so reads
+    # exit-code only (0 = supported hardware). On a real Deck this
+    # checks for Galileo/Sephiroth board IDs; on the PS5 we pretend.
+    mkdir -p /usr/bin/steamos-polkit-helpers
+    cat > /usr/bin/steamos-polkit-helpers/jupiter-check-support <<'STUBEOF'
+    #!/bin/bash
+    # Stub: pretend Jupiter (Steam Deck) hardware check passed.
+    exit 0
+    STUBEOF
+    chmod 0755 /usr/bin/steamos-polkit-helpers/jupiter-check-support
+
 
 mappings:
   architecture_map: archlinux

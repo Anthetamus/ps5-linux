@@ -2067,6 +2067,14 @@ case "$DISTRO" in
         # to-Desktop black screen" for the rationale.
         sed -i 's/$/ systemd.unit=graphical.target amdgpu.dpm=0 amdgpu.gpu_recovery=0/' /tmp/usb_efi/cmdline.txt
         ;;
+    cachyos)
+        # Same amdgpu params as steamos — without these the soft tty
+        # handoff for Switch-to-Desktop black-screens the HDMI bridge
+        # and the original cachyos workaround was a forced reboot.
+        # With these on the cmdline, the kill-gamescope path works
+        # cleanly (steamos-session-select plasma → no reboot).
+        sed -i 's/$/ amdgpu.dpm=0 amdgpu.gpu_recovery=0/' /tmp/usb_efi/cmdline.txt
+        ;;
 esac
 cp /repo/boot/vram.txt     /tmp/usb_efi/
 cp /repo/boot/kexec.sh     /tmp/usb_efi/

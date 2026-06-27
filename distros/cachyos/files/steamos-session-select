@@ -73,6 +73,16 @@ case "$session" in
         fi
         ;;
     desktop|plasma|plasma-wayland|plasmax11)
-        exec sudo systemctl reboot
+        # Soft tty handoff (kill compositor, agetty respawns into plasma).
+        # The original cachyos workaround was a full reboot because the AMD
+        # DP->HDMI bridge stayed in a black state after the soft handoff.
+        # With amdgpu.dpm=0 + amdgpu.gpu_recovery=0 on the kernel cmdline
+        # (added to boot/cmdline.txt for cachyos), the soft handoff works.
+        if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+            loginctl terminate-session "$XDG_SESSION_ID"
+        else
+            pkill -u steam gamescope-session-ps5 || true
+            pkill -u steam gamescope || true
+        fi
         ;;
 esac
