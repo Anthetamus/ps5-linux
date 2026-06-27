@@ -1952,7 +1952,15 @@ case "$DISTRO" in
         # some early-userspace paths re-pick multi-user.target if the
         # symlink isn't readable yet. The cmdline override is read first
         # and bypasses that race.
-        sed -i 's/$/ systemd.unit=graphical.target/' /tmp/usb_efi/cmdline.txt
+        #
+        # amdgpu.dpm=0 / amdgpu.gpu_recovery=0 — same fix as Bazzite. The
+        # modprobe.d conf alone wasn't enough on the live PS5: amdgpu was
+        # already loading with default params before the rootfs conf got
+        # read (presumably built-in init order). Cmdline is parsed by the
+        # kernel before any module init, so this is the reliable path.
+        # See commit message "amdgpu dpm=0 gpu_recovery=0 — fixes Switch-
+        # to-Desktop black screen" for the rationale.
+        sed -i 's/$/ systemd.unit=graphical.target amdgpu.dpm=0 amdgpu.gpu_recovery=0/' /tmp/usb_efi/cmdline.txt
         ;;
 esac
 cp /repo/boot/vram.txt     /tmp/usb_efi/
