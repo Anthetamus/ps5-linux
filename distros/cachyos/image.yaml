@@ -396,16 +396,48 @@ actions:
     LOGO=steamdeck-logo
     OSEOF
 
-    # Stub jupiter-check-support to return success. steamui.so reads
-    # exit-code only (0 = supported hardware). On a real Deck this
-    # checks for Galileo/Sephiroth board IDs; on the PS5 we pretend.
+    # Stub all the steamos-*/jupiter-* helpers Steam Deck UI calls when it
+    # detects ID=steamos (-steamos3 / -gamepadui paths). Without these,
+    # Steam's System Manager job ticks every 30s and floods steamui logs
+    # with "exit 127 — command not found". Exit codes follow Valve's
+    # convention: 0 for *-check / *-mode, 7 for *-update ("no update").
     mkdir -p /usr/bin/steamos-polkit-helpers
-    cat > /usr/bin/steamos-polkit-helpers/jupiter-check-support <<'STUBEOF'
+
+    stub_zero() {
+      cat > "$1" <<STUB
     #!/bin/bash
-    # Stub: pretend Jupiter (Steam Deck) hardware check passed.
+    # Stub: PS5 isn't a Deck; pretend the action succeeded.
     exit 0
-    STUBEOF
-    chmod 0755 /usr/bin/steamos-polkit-helpers/jupiter-check-support
+    STUB
+      chmod 0755 "$1"
+    }
+    stub_noupdate() {
+      cat > "$1" <<STUB
+    #!/bin/bash
+    # Stub: no SteamOS OTA on this image.
+    exit 7
+    STUB
+      chmod 0755 "$1"
+    }
+
+    for h in steamos-select-branch steamos-set-timezone steamos-devkit-mode \
+             jupiter-initial-firmware-update; do
+      stub_zero "/usr/bin/$h"
+    done
+    for h in steamos-update steamos-update-rauc steamos-mandatory-update; do
+      stub_noupdate "/usr/bin/$h"
+    done
+
+    for h in jupiter-check-support jupiter-dock-updater jupiter-fan-control \
+             jupiter-get-als-gain jupiter-biosupdate jupiter-controller-update \
+             steamos-factory-reset-config steamos-format-device \
+             steamos-priv-write steamos-readonly steamos-grub-on-boot \
+             steamos-set-timezone steamos-select-branch steamos-devkit-mode; do
+      stub_zero "/usr/bin/steamos-polkit-helpers/$h"
+    done
+    for h in steamos-update steamos-update-rauc steamos-mandatory-update; do
+      stub_noupdate "/usr/bin/steamos-polkit-helpers/$h"
+    done
 
 
 mappings:
