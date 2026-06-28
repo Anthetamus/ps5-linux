@@ -1,25 +1,7 @@
-[38;2;51;204;255m                                                                                                                                                                                                             
-                                                                                                                                                          dddddddd                                           
-                             tttt                                                                                                                         d::::::d                                           
-                          ttt:::t                                                                                                                         d::::::d                                           
-                          t:::::t                                                                                                                         d::::::d                                           
-                          t:::::t                                                                                                                         d:::::d                                            
-    eeeeeeeeeeee    ttttttt:::::ttttttt      aaaaaaaaaaaaawwwwwww           wwwww           wwwwwww eeeeeeeeeeee    nnnn  nnnnnnnn                ddddddddd:::::d     eeeeeeeeeeee  vvvvvvv           vvvvvvv
-  ee::::::::::::ee  t:::::::::::::::::t      a::::::::::::aw:::::w         w:::::w         w:::::wee::::::::::::ee  n:::nn::::::::nn            dd::::::::::::::d   ee::::::::::::ee v:::::v         v:::::v 
- e::::::eeeee:::::eet:::::::::::::::::t      aaaaaaaaa:::::aw:::::w       w:::::::w       w:::::we::::::eeeee:::::een::::::::::::::nn          d::::::::::::::::d  e::::::eeeee:::::eev:::::v       v:::::v  
-e::::::e     e:::::etttttt:::::::tttttt               a::::a w:::::w     w:::::::::w     w:::::we::::::e     e:::::enn:::::::::::::::n        d:::::::ddddd:::::d e::::::e     e:::::e v:::::v     v:::::v   
-e:::::::eeeee::::::e      t:::::t              aaaaaaa:::::a  w:::::w   w:::::w:::::w   w:::::w e:::::::eeeee::::::e  n:::::nnnn:::::n        d::::::d    d:::::d e:::::::eeeee::::::e  v:::::v   v:::::v    
-e:::::::::::::::::e       t:::::t            aa::::::::::::a   w:::::w w:::::w w:::::w w:::::w  e:::::::::::::::::e   n::::n    n::::n        d:::::d     d:::::d e:::::::::::::::::e    v:::::v v:::::v     
-e::::::eeeeeeeeeee        t:::::t           a::::aaaa::::::a    w:::::w:::::w   w:::::w:::::w   e::::::eeeeeeeeeee    n::::n    n::::n        d:::::d     d:::::d e::::::eeeeeeeeeee      v:::::v:::::v      
-e:::::::e                 t:::::t    tttttta::::a    a:::::a     w:::::::::w     w:::::::::w    e:::::::e             n::::n    n::::n        d:::::d     d:::::d e:::::::e                v:::::::::v       
-e::::::::e                t::::::tttt:::::ta::::a    a:::::a      w:::::::w       w:::::::w     e::::::::e            n::::n    n::::n        d::::::ddddd::::::dde::::::::e                v:::::::v        
- e::::::::eeeeeeee        tt::::::::::::::ta:::::aaaa::::::a       w:::::w         w:::::w       e::::::::eeeeeeee    n::::n    n::::n ......  d:::::::::::::::::d e::::::::eeeeeeee         v:::::v         
-  ee:::::::::::::e          tt:::::::::::tt a::::::::::aa:::a       w:::w           w:::w         ee:::::::::::::e    n::::n    n::::n .::::.   d:::::::::ddd::::d  ee:::::::::::::e          v:::v          
-    eeeeeeeeeeeeee            ttttttttttt    aaaaaaaaaa  aaaa        www             www            eeeeeeeeeeeeee    nnnnnn    nnnnnn ......    ddddddddd   ddddd    eeeeeeeeeeeeee           vvv           
-                                                                                                                                                                                                             
-                                                                                                                                                                                                             
-                                                                                                                                                                                                             
-                                                                                                                                                                                                             
-                                                                                                                                                                                                             
-                                                                                                                                                                                                             
-                                                                                                                                                                                                             [0m
+[38;2;51;204;255m       __                                 __         
+  ___  / /_____ __      _____  ____   ____/ /__ _   __
+ / _ \/ __/ __ `/ | /| / / _ \/ __ \ / __  / _ \ | / /
+/  __/ /_/ /_/ /| |/ |/ /  __/ / / // /_/ /  __/ |/ / 
+\___/\__/\__,_/ |__/|__/\___/_/ /_(_)__,_/\___/|___/  
+                                                      [0m
+
