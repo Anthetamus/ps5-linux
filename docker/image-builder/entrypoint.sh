@@ -1720,6 +1720,18 @@ OVERRIDE_END
     esac
 fi
 
+# --- Universal: etawen.dev boot banner ---
+# Shown by agetty at the pre-login prompt (/etc/issue), to remote logins
+# via SSH (/etc/issue.net), and post-login (/etc/motd). On distros with
+# tty1 autologin (cachyos, steamos) /etc/issue isn't seen but ssh + motd
+# still are.
+if [ -r /repo/distros/shared/etawen-banner.txt ]; then
+    install -Dm644 /repo/distros/shared/etawen-banner.txt "$CHROOT/etc/etawen-banner.txt"
+    cp /repo/distros/shared/etawen-banner.txt "$CHROOT/etc/issue"
+    cp /repo/distros/shared/etawen-banner.txt "$CHROOT/etc/issue.net"
+    cp /repo/distros/shared/etawen-banner.txt "$CHROOT/etc/motd"
+fi
+
 # --- Post-distrobuilder fixups ---
 case "$DISTRO" in
     ubuntu*|debian*|mint*|fedora*|bazzite*|batocera*)
