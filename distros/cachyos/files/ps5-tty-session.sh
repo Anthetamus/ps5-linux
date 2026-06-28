@@ -68,6 +68,25 @@ case "$SESSION" in
   gamescope|*)
     echo gamescope >"$SESSION_FILE"
     export WLR_LIBINPUT_NO_DEVICES=1
+
+    # First-boot UX: Steam will auto-opt into the steamdeck_stable client
+    # (because ID=steamos in /etc/os-release) and download ~500 MB before
+    # it's usable. The download forces 2-3 gamescope restart cycles which
+    # looks like a crash loop. Print a friendly message before exec so the
+    # screen has *something* between cycles. Detect first-run by the
+    # absence of the steamdeck_stable client manifest.
+    STEAM_MANIFEST="$HOME/.local/share/Steam/package/steam_client_steamdeck_stable_ubuntu12.installed"
+    if [ ! -f "$STEAM_MANIFEST" ]; then
+      clear 2>/dev/null || true
+      printf '\n\n\n'
+      printf '    \033[1;36m==============================================\033[0m\n'
+      printf '    \033[1;36m   PS5 Linux  /  CachyOS                      \033[0m\n'
+      printf '    \033[1;36m==============================================\033[0m\n\n'
+      printf '    \033[1mDownloading Steam client...\033[0m\n\n'
+      printf '    This could take several minutes on first boot.\n'
+      printf '    The screen may flicker as Steam restarts. Please wait.\n\n'
+    fi
+
     exec /usr/bin/gamescope-session-ps5
     ;;
 esac
