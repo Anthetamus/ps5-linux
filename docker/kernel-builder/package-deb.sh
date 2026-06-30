@@ -39,7 +39,7 @@ fi
 # point KERNELDIR= at /usr/lib/modules/<kver>/build/ explicitly, or recreate
 # the symlink post-install if they want the legacy path.
 if [ -d "$STAGING/headers" ]; then
-    cp -a "$STAGING/headers/usr" "$PKG/usr"
+    cp -a "$STAGING/headers/usr/." "$PKG/usr/"
     mkdir -p "$PKG/usr/lib/modules/$KVER"
     cp -a "$STAGING/headers/lib/modules/$KVER/build" "$PKG/usr/lib/modules/$KVER/build"
 fi
