@@ -39,7 +39,6 @@ fi
 # point KERNELDIR= at /usr/lib/modules/<kver>/build/ explicitly, or recreate
 # the symlink post-install if they want the legacy path.
 if [ -d "$STAGING/headers" ]; then
-    cp -a "$STAGING/headers/usr/." "$PKG/usr/"
     mkdir -p "$PKG/usr/lib/modules/$KVER"
     cp -a "$STAGING/headers/lib/modules/$KVER/build" "$PKG/usr/lib/modules/$KVER/build"
 fi
@@ -49,10 +48,10 @@ Package: linux-ps5
 Version: $VER
 Architecture: $ARCH
 Maintainer: PS5 Linux
-Provides: linux-image-$KVER, linux-headers-$KVER, linux-libc-dev
-Conflicts: linux-image-$KVER, linux-headers-$KVER, linux-libc-dev
-Replaces: linux-image-$KVER, linux-headers-$KVER, linux-libc-dev
-Description: PS5 Linux kernel $KVER (image + modules + headers + libc-dev)
+Provides: linux-image-$KVER, linux-headers-$KVER
+Conflicts: linux-image-$KVER, linux-headers-$KVER
+Replaces: linux-image-$KVER, linux-headers-$KVER
+Description: PS5 Linux kernel $KVER (image + modules + headers)
 CTRL
 
 cat > "$PKG/DEBIAN/postinst" << 'POSTINST'

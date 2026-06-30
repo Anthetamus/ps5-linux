@@ -30,8 +30,6 @@ cp -a "/out/staging/lib/modules/$KVER" "$STAGING/usr/lib/modules/"
 
 # Kernel headers (for out-of-tree module builds)
 if [ -d /out/staging/headers ]; then
-    # UAPI headers (/usr/include/linux/, /usr/include/asm/, etc.)
-    cp -a /out/staging/headers/usr/. "$STAGING/usr/"
     # Build headers (/usr/lib/modules/$KVER/build/)
     mkdir -p "$STAGING/usr/lib/modules/$KVER"
     cp -a /out/staging/headers/lib/modules/$KVER/build "$STAGING/usr/lib/modules/$KVER/build"
@@ -56,14 +54,11 @@ arch = x86_64
 license = GPL-2.0-only
 provides = linux=$VERSION
 provides = linux-headers=$VERSION
-provides = linux-api-headers=$VERSION
 conflict = linux
 conflict = linux-headers
-conflict = linux-api-headers
 conflict = linux-custom
 replaces = linux
 replaces = linux-headers
-replaces = linux-api-headers
 replaces = linux-custom
 EOF
 
