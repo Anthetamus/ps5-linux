@@ -764,6 +764,16 @@ ARTIX_IN
             cp /repo/distros/bazzite/grow-rootfs       "$CHROOT/var/usrlocal/sbin/grow-rootfs"
             chmod +x "$CHROOT/var/usrlocal/sbin/grow-rootfs"
             cp /repo/distros/bazzite/grow-rootfs.service "$CHROOT/etc/systemd/system/grow-rootfs.service"
+
+            # Force NetworkManager off iwd back to wpa_supplicant. Bazzite
+            # defaults to iwd; iwd's compat with the PS5 NXP IW620 mwifiex
+            # driver is broken (no SSIDs scanned, NM hangs). wpa_supplicant
+            # works out of the box.
+            mkdir -p "$CHROOT/etc/NetworkManager/conf.d"
+            cat > "$CHROOT/etc/NetworkManager/conf.d/00-no-iwd.conf" <<'NMCONF'
+[device]
+wifi.backend=wpa_supplicant
+NMCONF
             # Chroot in: disable ostree stack, install PS5 kernel, user setup.
             # Trap to always umount, even if the chroot script exits early.
             cleanup_bazzite_mounts() {
