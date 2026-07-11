@@ -35,7 +35,7 @@ EOF
     cp /repo/distros/${DISTRO}/nm-dns.conf       "$STAGING/" 2>/dev/null || true
 
     case "$DISTRO" in
-        ubuntu*|debian*|mint*)
+        ubuntu*|debian*|mint*|hannah-montana-linux)
             cp /repo/distros/${DISTRO}/grow-rootfs       "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /kernel-debs/*.deb                          "$STAGING/debs/"
