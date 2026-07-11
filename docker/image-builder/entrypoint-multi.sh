@@ -16,7 +16,7 @@ NUM_DISTROS=$(echo $DISTROS | wc -w)
 # ======================================================================
 for DISTRO in $DISTROS; do
     CHROOT="/build/chroot-${DISTRO}"
-    ROOT_LABEL="$DISTRO"
+    ROOT_LABEL="${DISTRO:0:16}"
 
     if [ "$SKIP_CHROOT" = "true" ] && [ -d "$CHROOT/bin" ]; then
         echo "=== Skipping $DISTRO chroot build, reusing existing rootfs ==="

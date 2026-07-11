@@ -11,7 +11,7 @@ case "${DISTRO}" in
 esac
 SKIP_CHROOT="${SKIP_CHROOT:-false}"
 STAGING="/tmp/build-staging"
-ROOT_LABEL="${DISTRO}"
+ROOT_LABEL="${DISTRO:0:16}"
 EFI_LABEL="boot"
 CHROOT="/build/chroot"
 IMG="/output/ps5-${DISTRO}.img"
