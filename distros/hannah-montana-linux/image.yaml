@@ -205,6 +205,22 @@ actions:
         sed -i 's|^branding:.*|branding: hannah-montana-linux|' /etc/calamares/settings.conf 2>/dev/null || true
     fi
 
+    # kde-plasma-desktop drops org.debian.desktop into /etc/skel/.config/
+    # kdedefaults/package on install; the HML overlay above may or may not
+    # have won that race depending on package order. Force it here.
+    mkdir -p /etc/skel/.config/kdedefaults
+    printf 'org.hml.desktop' > /etc/skel/.config/kdedefaults/package
+
+    # HML's shipped kdeglobals only sets ColorScheme + Icons in kdedefaults,
+    # which is a *fallback*. If a user's top-level kdeglobals writes those
+    # keys (as Plasma will on first launch from Debian's own defaults),
+    # the fallback never kicks in. Pin them at top level so the theme
+    # actually applies on first login.
+    kwriteconfig6 --file /etc/skel/.config/kdeglobals --group General --key ColorScheme PrettyPink
+    kwriteconfig6 --file /etc/skel/.config/kdeglobals --group Icons   --key Theme       HannahMontana
+    kwriteconfig6 --file /etc/skel/.config/kdeglobals --group KDE     --key LookAndFeelPackage org.hml.desktop
+    kwriteconfig6 --file /etc/skel/.config/kdeglobals --group KDE     --key widgetStyle Breeze
+
 - trigger: post-packages
   action: |-
     #!/bin/bash
