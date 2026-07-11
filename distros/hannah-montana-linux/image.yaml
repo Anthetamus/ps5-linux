@@ -187,6 +187,27 @@ actions:
 - trigger: post-packages
   action: |-
     #!/bin/bash
+    # Overlay HML26 branding EARLY so /etc/skel gets populated before the
+    # useradd hook copies it into /home/ps5. Otherwise the fastfetch config,
+    # kdedefaults, wallpapers etc. stay in /etc/skel and never reach the
+    # user's home dir. Pinned to gitlab tag 26.1.
+    set -eux
+    HML_TAG=26.1
+    HML_URL="https://gitlab.com/DecaCagle/hannahmontanalinux26/-/archive/${HML_TAG}/hannahmontanalinux26-${HML_TAG}.tar.gz"
+    mkdir -p /tmp/hml
+    curl -fsSL "$HML_URL" | tar -xz -C /tmp/hml --strip-components=1
+    if [ -d /tmp/hml/config/includes.chroot ]; then
+        cp -a /tmp/hml/config/includes.chroot/. /
+    fi
+    rm -rf /tmp/hml
+
+    if [ -d /etc/calamares/branding/hannah-montana-linux ]; then
+        sed -i 's|^branding:.*|branding: hannah-montana-linux|' /etc/calamares/settings.conf 2>/dev/null || true
+    fi
+
+- trigger: post-packages
+  action: |-
+    #!/bin/bash
     set -eux
     fc-cache -f -v
 
@@ -266,31 +287,6 @@ actions:
     cat > /etc/apt/sources.list.d/etawen-ps5.list <<EOF
     deb [signed-by=/etc/apt/keyrings/etawen-ps5.gpg] https://repo.etawen.dev/deb ./
     EOF
-
-- trigger: post-files
-  action: |-
-    #!/bin/bash
-    # Overlay HML26 branding: wallpapers, plasma theme, SDDM theme, Calamares
-    # branding, /etc/skel — mirror what upstream live-build copies via
-    # config/includes.chroot. Pinned to tag 26.1.
-    set -eux
-    HML_TAG=26.1
-    HML_URL="https://gitlab.com/DecaCagle/hannahmontanalinux26/-/archive/${HML_TAG}/hannahmontanalinux26-${HML_TAG}.tar.gz"
-    mkdir -p /tmp/hml
-    curl -fsSL "$HML_URL" | tar -xz -C /tmp/hml --strip-components=1
-    if [ -d /tmp/hml/config/includes.chroot ]; then
-        cp -a /tmp/hml/config/includes.chroot/. /
-    fi
-    rm -rf /tmp/hml
-
-    # Point Calamares at the HML branding shipped by the overlay.
-    if [ -d /etc/calamares/branding/hannah-montana-linux ]; then
-        sed -i 's|^branding:.*|branding: hannah-montana-linux|' /etc/calamares/settings.conf 2>/dev/null || true
-    fi
-
-    # HML wants SDDM Breeze with its custom wallpaper. The overlay drops a
-    # ready sddm.conf.d file; make sure sddm actually reads it.
-    systemctl enable sddm
 
 mappings:
   architecture_map: debian
