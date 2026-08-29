@@ -15,7 +15,14 @@ jobs:
   check:
     runs-on: self-hosted
     steps:
+      # Scheduled runs get pinned to the sha the schedule was registered
+      # at (the last commit that touched the workflow file), which drifts
+      # behind main as auto-bumps land. Explicit ref: main + fetch-depth: 0
+      # so we read the current build_image.sh and push a fast-forward.
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Compare upstream latest vs current PATCHES_REF
         id: cmp

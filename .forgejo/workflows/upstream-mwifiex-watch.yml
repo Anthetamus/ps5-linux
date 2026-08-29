@@ -14,7 +14,13 @@ jobs:
   check:
     runs-on: self-hosted
     steps:
+      # ref: main + fetch-depth: 0 so scheduled runs read the current
+      # build_image.sh and produce a fast-forward push. See upstream-watch.yml
+      # for the drift-past-scheduled-sha explanation.
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Compare upstream main vs current MWIFIEX_REF
         id: cmp
