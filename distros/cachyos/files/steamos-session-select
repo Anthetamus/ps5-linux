@@ -65,11 +65,18 @@ sudo "$(realpath "$0")" "$session"
 
 case "$session" in
     gamescope)
+        # Always kill the Plasma compositor and shell. loginctl
+        # terminate-session $XDG_SESSION_ID isn't reliable — a KRunner
+        # shortcut / .desktop file launched via systemd scope inherits a
+        # session id that isn't the graphical one, so terminating it
+        # doesn't touch kwin, and gamescope-session-ps5 loops on tty1
+        # because kwin still owns /dev/dri/card0.
+        pkill -u steam plasmashell || true
+        pkill -u steam kwin_wayland || true
+        pkill -u steam kwin_x11 || true
+        # Best-effort clean shutdown of user services on the calling scope.
         if [[ -n "${XDG_SESSION_ID:-}" ]]; then
-            loginctl terminate-session "$XDG_SESSION_ID"
-        else
-            pkill -u steam kwin_wayland || true
-            pkill -u steam kwin_x11 || true
+            loginctl terminate-session "$XDG_SESSION_ID" || true
         fi
         ;;
     desktop|plasma|plasma-wayland|plasmax11)
