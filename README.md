@@ -19,6 +19,7 @@ Pre-built `.img.xz` files for every distro below are published on the [`latest`]
 | Debian 13 (Trixie) — Server | tty1 autologin | `.deb` | headless, no DE |
 | Debian 13 + Proxmox VE 9 | Proxmox web UI | `.deb` | KVM/LXC, pinned Debian kernel replaced with linux-ps5 |
 | Arch | Sway | `.pkg.tar.zst` | rolling |
+| EndeavourOS | KDE Plasma (SDDM) | `.pkg.tar.zst` | Arch + `[endeavouros]` repo, welcome app |
 | CachyOS | Gamescope + Steam Big Picture | `.pkg.tar.zst` | Arch + `[cachyos]` repo |
 | Alpine 3.21 | OpenRC tty | extracted `.deb` | musl, minimal |
 | Fedora 44 — GNOME | GNOME | `.rpm` | latest Fedora |
@@ -145,6 +146,7 @@ distros/
   ubuntu2604/                   # Ubuntu 26.04
   debian13-{xfce,server,gnome,kde,proxmox}/
   arch/                         # Arch Linux
+  endeavoros/                   # EndeavourOS (Arch + [endeavouros] repo, KDE Plasma)
   cachyos/                      # CachyOS + Gamescope/Steam
   alpine/                       # Alpine 3.21
   fedora-{gnome,kde}/           # Fedora 44

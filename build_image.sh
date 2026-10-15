@@ -18,7 +18,7 @@ usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, debian13, devuan-sway, artix-openrc, arch, cachyos, miaos, alpine, hannah-montana-linux, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, debian13, devuan-sway, artix-openrc, arch, cachyos, endeavoros, miaos, alpine, hannah-montana-linux, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
@@ -94,7 +94,7 @@ esac
 
 if [ -z "$FORMAT" ]; then
     case "$DISTRO" in
-        arch|cachyos|miaos*|artix*|steamos) FORMAT="arch" ;;
+        arch|cachyos|endeavoros|miaos*|artix*|steamos) FORMAT="arch" ;;
         fedora*|bazzite*)        FORMAT="rpm" ;;
         all)                     FORMAT="all" ;;
         *)                       FORMAT="deb" ;;

@@ -1,0 +1,49 @@
+#!/bin/bash
+# First-boot interactive setup: creates an additional user account.
+# The image already ships ps5/ps5 and boots to the SDDM login screen;
+# this is a convenience helper for adding another user from a tty.
+set -e
+
+clear
+echo "========================================="
+echo "  Welcome! Let's set up your account."
+echo "========================================="
+echo
+
+# --- Username ---
+while true; do
+    read -rp "Username: " USERNAME
+    if [[ -z "$USERNAME" ]]; then
+        echo "Username cannot be empty."
+    elif ! [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        echo "Invalid username. Use lowercase letters, digits, hyphens, underscores."
+    else
+        break
+    fi
+done
+
+# --- Password ---
+while true; do
+    read -rsp "Password: " PASSWORD; echo
+    read -rsp "Confirm:  " PASSWORD2; echo
+    if [[ -z "$PASSWORD" ]]; then
+        echo "Password cannot be empty."
+    elif [[ "$PASSWORD" != "$PASSWORD2" ]]; then
+        echo "Passwords do not match. Try again."
+    else
+        break
+    fi
+done
+
+echo
+echo "Creating user $USERNAME ..."
+
+useradd -m -G wheel,video,audio,input -s /bin/bash "$USERNAME"
+echo "$USERNAME:$PASSWORD" | chpasswd
+
+# Sudoers
+echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+
+echo
+echo "Done! Log in from the SDDM screen."
+sleep 1

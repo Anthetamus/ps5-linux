@@ -91,10 +91,10 @@ EOF
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                    "$STAGING/pkgs/"
             ;;
-        arch)
-            cp /repo/distros/arch/grow-rootfs              "$STAGING/"
-            cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
-            cp /repo/distros/arch/first-boot-setup         "$STAGING/"
+        arch|endeavoros)
+            cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
+            cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
+            cp /repo/distros/${DISTRO}/first-boot-setup    "$STAGING/"
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                  "$STAGING/pkgs/"
             ;;
