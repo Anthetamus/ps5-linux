@@ -58,8 +58,10 @@ packages:
     # Controllers (PS5 native, Xbox via hid-generic, 8BitDo etc)
     - libusb
     - lib32-libusb
+    # Arch dropped lib32-sdl2 in the SDL2→SDL3 transition; multilib now only
+    # ships lib32-sdl3 (64-bit `sdl2` still resolves via sdl2-compat).
     - sdl2
-    - lib32-sdl2
+    - lib32-sdl3
 
     # KDE Plasma — desktop mode (SteamOS-style switch out of Big Picture).
     # Wayland session only; no SDDM (we start plasma-wayland from tty1).
@@ -162,12 +164,9 @@ actions:
     curl -fsSL "https://archlinux.org/mirrorlist/?country=all&protocol=https&use_mirror_status=on" \
         | sed 's/^#Server/Server/' > /etc/pacman.d/mirrorlist
 
-    # Enable [multilib] for lib32-* packages
-    cat >> /etc/pacman.conf <<'EOF'
-
-    [multilib]
-    Include = /etc/pacman.d/mirrorlist
-    EOF
+    # Enable [multilib] for lib32-* packages. Uncomment in place (same as
+    # cachyos) instead of appending a new section — one authoritative copy.
+    sed -i '/^#\[multilib\]/,/^#Include/s/^#//' /etc/pacman.conf
 
     pacman -Syy --noconfirm
 
