@@ -82,6 +82,13 @@ case "$DISTRO" in
             IMG_SIZE=16000
         fi
         ;;
+    # Artix package set grew past 12GB (pacman: "Partition / too full:
+    # 58071 blocks needed, 0 blocks free" on 2026-10-16). Bump to 14GB.
+    artix*)
+        if [ "$IMG_SIZE" = "12000" ]; then
+            IMG_SIZE=14000
+        fi
+        ;;
     # Gaming image: Arch base + gamescope + Steam + lib32 stack. Steam is
     # ~2 GB and dual 32/64-bit Mesa/Vulkan adds another ~1 GB. Bump from
     # 12 -> 16 GB so there's headroom for a game.

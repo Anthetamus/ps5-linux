@@ -224,9 +224,19 @@ jobs:
             for AID in $(python3 -c 'import json,os; print(" ".join(str(a["id"]) for a in json.load(open("/tmp/assets.json")) if a.get("name")==os.environ["FILE"]))'); do
               curl -fsS -X DELETE -H "$AUTH" -H "User-Agent: $UA" "$API/releases/$REL_ID/assets/$AID" || true
             done
-            curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" \
-              -F "attachment=@image/output/$FILE" \
-              "$API/releases/$REL_ID/assets?name=$FILE"
+            # Retry the multi-GB upload: parallel matrix jobs on different
+            # runners can transiently fill the server's disk (multipart temp
+            # + attachment copy both land on /), yielding a 500 at finalize.
+            for i in 1 2 3; do
+              if curl -fsS -X POST -H "$AUTH" -H "User-Agent: $UA" \
+                -F "attachment=@image/output/$FILE" \
+                "$API/releases/$REL_ID/assets?name=$FILE"; then
+                break
+              fi
+              echo "upload attempt $i failed; sleeping 120s before retry"
+              [ "$i" = 3 ] && exit 1
+              sleep 120
+            done
           ) 9>/data/cache/ps5/.release-upload.lock
 
       - name: Attach kernel package(s) to release (per matrix format)
