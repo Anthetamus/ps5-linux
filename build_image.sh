@@ -9,7 +9,7 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
-PATCHES_REF="kernel-7.1.7-56922cf"
+PATCHES_REF="kernel-7.1.7-024240a"
 MWIFIEX_REF="4aff9085530a3cdf7d5fbb124c006cc299ac3605"
 
 MULTI_DISTROS="ubuntu2604 debian13 arch alpine cachyos"
@@ -45,7 +45,7 @@ done
 LINUX_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 LINUX_DEFAULT_DIR="$SCRIPT_DIR/work/linux"
 
-PATCHES_REPO="https://github.com/ps5-linux/ps5-linux-patches.git"
+PATCHES_REPO="https://git.etawen.dev/mia/ps5-linux-patches.git"
 PATCHES_DIR="$SCRIPT_DIR/work/ps5-linux-patches"
 
 if [ -z "$KERNEL_SRC" ]; then
