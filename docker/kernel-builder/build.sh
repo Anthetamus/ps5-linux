@@ -82,6 +82,23 @@ if [ -f /tmp/mwifiex-ps5/ps5-iw620-kernel71-compat.patch ]; then
     fi
 fi
 
+# Kernel 7.2 removed strncpy() entirely; the NXP driver still calls it in
+# ~15 moal_*.c files. Shim to strscpy() (always NUL-terminates — strictly
+# safer than strncpy) via the common driver header. moal_main.h already
+# includes <linux/version.h>, and every moal_*.c includes moal_main.h.
+KMAJ=$(awk -F= '/^VERSION/{print $2}' /src/Makefile | tr -d ' ')
+KMIN=$(awk -F= '/^PATCHLEVEL/{print $2}' /src/Makefile | tr -d ' ')
+if [ "${KMAJ:-0}" -gt 7 ] || { [ "${KMAJ:-0}" = "7" ] && [ "${KMIN:-0}" -ge 2 ]; }; then
+    echo "  + shimming strncpy -> strscpy for kernel $KMAJ.$KMIN"
+    cat >> /tmp/mwifiex-nxp/mlinux/moal_main.h <<'SHIM'
+
+/* Kernel 7.2 removed strncpy(); route to strscpy(). */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+#define strncpy(dest, src, n) strscpy(dest, src, n)
+#endif
+SHIM
+fi
+
 make -C /tmp/mwifiex-nxp CONFIG_OBJTOOL= KERNELDIR=/src ARCH=x86 -j"$(nproc)"
 
 mkdir -p "/out/staging/lib/modules/$KVER/extra/ps5-iw620"
