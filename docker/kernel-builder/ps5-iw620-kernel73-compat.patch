@@ -75,7 +75,7 @@ index a8a64c5..f85a0e2 100644
  mlan_status woal_register_cfg80211(moal_private *priv);
  
 diff --git a/mlinux/moal_sta_cfg80211.c b/mlinux/moal_sta_cfg80211.c
-index b79bf43..3e2ad9b 100644
+index b79bf43..8bea762 100644
 --- a/mlinux/moal_sta_cfg80211.c
 +++ b/mlinux/moal_sta_cfg80211.c
 @@ -257,7 +257,12 @@ woal_cfg80211_remain_on_channel(struct wiphy *wiphy,
@@ -91,20 +91,7 @@ index b79bf43..3e2ad9b 100644
  
  static int woal_cfg80211_cancel_remain_on_channel(struct wiphy *wiphy,
  #if CFG80211_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
-@@ -7585,6 +7590,12 @@ static int woal_cfg80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
- 	int ret = 0;
- 	t_u8 status = 1;
- 	moal_private *remain_priv = NULL;
-+#if CFG80211_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
-+	u64 cookie_v = cookie;
-+	u64 *cookie_p = &cookie_v;
-+#else
-+	u64 *cookie_p = cookie;
-+#endif
- 
- 	ENTER();
- 
-@@ -7647,7 +7658,12 @@ woal_cfg80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+@@ -7647,7 +7652,12 @@ woal_cfg80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
  #if CFG80211_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
  				enum nl80211_channel_type channel_type,
  #endif
@@ -117,6 +104,19 @@ index b79bf43..3e2ad9b 100644
  #else
  /**
   * @brief Make chip remain on channel
+@@ -7675,6 +7685,12 @@ woal_cfg80211_remain_on_channel(struct wiphy *wiphy, struct net_device *dev,
+ 	int ret = 0;
+ 	t_u8 status = 1;
+ 	moal_private *remain_priv = NULL;
++#if CFG80211_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
++	u64 cookie_v = cookie;
++	u64 *cookie_p = &cookie_v;
++#else
++	u64 *cookie_p = cookie;
++#endif
+ 
+ 	ENTER();
+ 
 @@ -7732,19 +7748,25 @@ woal_cfg80211_remain_on_channel(struct wiphy *wiphy, struct net_device *dev,
  	}
  
