@@ -73,30 +73,29 @@ if [ -f /tmp/mwifiex-ps5/ps5-iw620-cmd-timeout-recover.patch ]; then
     echo "  + applying cmd-timeout-recover patch"
     git -C /tmp/mwifiex-nxp apply /tmp/mwifiex-ps5/ps5-iw620-cmd-timeout-recover.patch
 fi
+KMAJ=$(awk -F= '/^VERSION/{print $2}' /src/Makefile | tr -d ' ')
+KMIN=$(awk -F= '/^PATCHLEVEL/{print $2}' /src/Makefile | tr -d ' ')
 if [ -f /tmp/mwifiex-ps5/ps5-iw620-kernel71-compat.patch ]; then
-    KMAJ=$(awk -F= '/^VERSION/{print $2}' /src/Makefile | tr -d ' ')
-    KMIN=$(awk -F= '/^PATCHLEVEL/{print $2}' /src/Makefile | tr -d ' ')
     if [ "${KMAJ:-0}" -gt 7 ] || { [ "${KMAJ:-0}" = "7" ] && [ "${KMIN:-0}" -ge 1 ]; }; then
         echo "  + applying kernel 7.1 cfg80211 compat patch (target kernel $KMAJ.$KMIN)"
         git -C /tmp/mwifiex-nxp apply /tmp/mwifiex-ps5/ps5-iw620-kernel71-compat.patch
     fi
 fi
-
-# Kernel 7.2 removed strncpy() entirely; the NXP driver still calls it in
-# ~15 moal_*.c files. Shim to strscpy() (always NUL-terminates — strictly
-# safer than strncpy) via the common driver header. moal_main.h already
-# includes <linux/version.h>, and every moal_*.c includes moal_main.h.
-KMAJ=$(awk -F= '/^VERSION/{print $2}' /src/Makefile | tr -d ' ')
-KMIN=$(awk -F= '/^PATCHLEVEL/{print $2}' /src/Makefile | tr -d ' ')
-if [ "${KMAJ:-0}" -gt 7 ] || { [ "${KMAJ:-0}" = "7" ] && [ "${KMIN:-0}" -ge 2 ]; }; then
-    echo "  + shimming strncpy -> strscpy for kernel $KMAJ.$KMIN"
-    cat >> /tmp/mwifiex-nxp/mlinux/moal_main.h <<'SHIM'
-
-/* Kernel 7.2 removed strncpy(); route to strscpy(). */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
-#define strncpy(dest, src, n) strscpy(dest, src, n)
-#endif
-SHIM
+# Kernel 7.2 removed strncpy() entirely; upstream ships the proper fix as
+# ps5-iw620-kernel72-compat.patch (strncpy->strscpy plus the 7.2
+# remain_on_channel mac_addr param). Apply it for 7.2+.
+if [ -f /tmp/mwifiex-ps5/ps5-iw620-kernel72-compat.patch ]; then
+    if [ "${KMAJ:-0}" -gt 7 ] || { [ "${KMAJ:-0}" = "7" ] && [ "${KMIN:-0}" -ge 2 ]; }; then
+        echo "  + applying kernel 7.2 compat patch (target kernel $KMAJ.$KMIN)"
+        git -C /tmp/mwifiex-nxp apply /tmp/mwifiex-ps5/ps5-iw620-kernel72-compat.patch
+    fi
+fi
+# 7.3 changed cfg80211 again (cookie passed by value, remain_on_channel
+# gained rx_addr, probe_client removed). Our layered patch lives in the
+# image repo (docker/kernel-builder/, bind-mounted with the build context).
+if [ "${KMAJ:-0}" -gt 7 ] || { [ "${KMAJ:-0}" = "7" ] && [ "${KMIN:-0}" -ge 3 ]; }; then
+    echo "  + applying kernel 7.3 cfg80211 compat patch (target kernel $KMAJ.$KMIN)"
+    git -C /tmp/mwifiex-nxp apply /ps5-iw620-kernel73-compat.patch
 fi
 
 make -C /tmp/mwifiex-nxp CONFIG_OBJTOOL= KERNELDIR=/src ARCH=x86 -j"$(nproc)"

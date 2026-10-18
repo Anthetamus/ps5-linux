@@ -25,6 +25,7 @@ WORKDIR /src
 COPY docker/kernel-builder/build.sh /build.sh
 COPY docker/kernel-builder/package-deb.sh /package-deb.sh
 COPY docker/kernel-builder/package-rpm.sh /package-rpm.sh
+COPY docker/kernel-builder/ps5-iw620-kernel73-compat.patch /ps5-iw620-kernel73-compat.patch
 RUN chmod +x /build.sh /package-deb.sh /package-rpm.sh
 
 CMD ["/build.sh"]
