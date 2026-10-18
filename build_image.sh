@@ -9,7 +9,7 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
-PATCHES_REF="kernel-7.2.3-557373b"
+PATCHES_REF="kernel-7.3.0-rc6-4c79c8f"
 MWIFIEX_REF="4aff9085530a3cdf7d5fbb124c006cc299ac3605"
 
 MULTI_DISTROS="ubuntu2604 debian13 arch alpine cachyos"
@@ -175,7 +175,14 @@ else
     echo "  Image size:   ${IMG_SIZE}MB"
 fi
 if [ -f "$PATCHES_DIR/.config" ]; then
-    LINUX_BRANCH="v$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?')"
+    KVER_STR=$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?(-rc\d+)?')
+    if [[ "$KVER_STR" == *-rc* ]]; then
+        # RC kernels live on torvalds/linux as vMAJOR.MINOR-rcN (no .0)
+        LINUX_BRANCH="v${KVER_STR/.0-rc/-rc}"
+        LINUX_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+    else
+        LINUX_BRANCH="v$KVER_STR"
+    fi
     echo "  Kernel:       $LINUX_BRANCH"
 else
     echo "  Kernel:       (will fetch)"
@@ -321,7 +328,14 @@ else
                 -v "$(dirname "$dir")":/parent \
                 alpine rm -rf "/parent/$(basename "$dir")"
         done
-        LINUX_BRANCH="v$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?')"
+        KVER_STR=$(grep -m1 "^# Linux/" "$PATCHES_DIR/.config" | grep -oP '\d+\.\d+(\.\d+)?(-rc\d+)?')
+    if [[ "$KVER_STR" == *-rc* ]]; then
+        # RC kernels live on torvalds/linux as vMAJOR.MINOR-rcN (no .0)
+        LINUX_BRANCH="v${KVER_STR/.0-rc/-rc}"
+        LINUX_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+    else
+        LINUX_BRANCH="v$KVER_STR"
+    fi
 
         run_stage "Clone kernel $LINUX_BRANCH" \
             git clone --branch "$LINUX_BRANCH" --depth 1 "$LINUX_REPO" "$LINUX_TMP_DIR"
