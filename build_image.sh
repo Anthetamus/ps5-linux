@@ -375,12 +375,19 @@ else
         docker build --platform "$KERNEL_BUILDER_PLATFORM" -t ps5-kernel-builder \
             -f "$SCRIPT_DIR/docker/kernel-builder/Dockerfile" "$SCRIPT_DIR"
 
+    # The 7.2.3+ config sets EXTRA_FIRMWARE_DIR="../ps5-linux-patches/firmware"
+    # (VCN blob). Relative to /src inside the container that's
+    # /ps5-linux-patches — mount the patches checkout there read-only.
+    PATCHES_MOUNT=()
+    [ -d "$PATCHES_DIR" ] && PATCHES_MOUNT=(-v "$PATCHES_DIR":/ps5-linux-patches:ro)
+
     run_stage "Compile kernel" \
         docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
             -e MWIFIEX_REF="$MWIFIEX_REF" \
             -v "$KERNEL_SRC":/src \
             -v "$KERNEL_OUT":/out \
             -v "$CCACHE_DIR":/ccache \
+            "${PATCHES_MOUNT[@]}" \
             ps5-kernel-builder
 
     ls "$KERNEL_OUT/staging/lib/modules/" | head -1 > "$KERNEL_OUT/VERSION"
