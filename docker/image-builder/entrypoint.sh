@@ -2109,6 +2109,12 @@ cp /repo/boot/vram.txt     /tmp/usb_efi/
 cp /repo/boot/kexec.sh     /tmp/usb_efi/
 sync
 
+# Trim free space before the image leaves the builder: discard on the loop
+# device punches holes in the backing file, so free blocks read as zeros and
+# xz compresses them away (~3% smaller downloads, free at build time).
+fstrim -v /tmp/usb_root 2>/dev/null || true
+fstrim -v /tmp/usb_efi  2>/dev/null || true
+
 umount /tmp/usb_root /tmp/usb_efi
 rmdir  /tmp/usb_root /tmp/usb_efi
 kpartx -dv "$LOOPDEV"
