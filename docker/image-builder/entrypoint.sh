@@ -2097,6 +2097,13 @@ case "$DISTRO" in
         # cleanly (steamos-session-select plasma → no reboot).
         sed -i 's/$/ amdgpu.dpm=0 amdgpu.gpu_recovery=0/' /tmp/usb_efi/cmdline.txt
         ;;
+    bazzite-deck)
+        # Explicit LSM stack — bazzite-deck's built-in game-mode/desktop-mode
+        # switcher (gamescope-session-plus) needs apparmor+landlock+bpf up
+        # front or the mode switch silently no-ops. Tested on hardware; keep
+        # the shared cmdline untouched for every other distro.
+        sed -i 's/$/ lsm=landlock,lockdown,yama,integrity,apparmor,bpf/' /tmp/usb_efi/cmdline.txt
+        ;;
 esac
 cp /repo/boot/vram.txt     /tmp/usb_efi/
 cp /repo/boot/kexec.sh     /tmp/usb_efi/
