@@ -20,7 +20,7 @@ Pre-built `.img.xz` files for every distro below are published on the [`latest`]
 | Debian 13 + Proxmox VE 9 | Proxmox web UI | `.deb` | KVM/LXC, pinned Debian kernel replaced with linux-ps5 |
 | Arch | Sway | `.pkg.tar.zst` | rolling |
 | EndeavourOS | KDE Plasma (SDDM) | `.pkg.tar.zst` | Arch + `[endeavouros]` repo, welcome app |
-| CachyOS | Gamescope + Steam Big Picture | `.pkg.tar.zst` | Arch + `[cachyos]` repo |
+| CachyOS | KDE Plasma (desktop-first) | `.pkg.tar.zst` | Arch + `[cachyos]` repo; Gaming Mode (gamescope + Steam BPM) via desktop shortcut |
 | Alpine 3.21 | OpenRC tty | extracted `.deb` | musl, minimal |
 | Fedora 44 — GNOME | GNOME | `.rpm` | latest Fedora |
 | Fedora 44 — KDE Plasma | KDE Plasma | `.rpm` | Mesa 26.1 (PS5 GFX1013 fix) when available |

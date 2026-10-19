@@ -1,7 +1,7 @@
 image:
   name: ps5-cachyos
   distribution: archlinux
-  description: Arch + CachyOS extras — tty1 autologin, Gamescope + Steam, KDE Plasma (no SDDM)
+  description: Arch + CachyOS extras — tty1 autologin to KDE Plasma desktop (no SDDM); Gamescope + Steam via desktop shortcut
   architecture: x86_64
 
 source:
@@ -298,7 +298,10 @@ actions:
     chmod 644 /home/steam/.bash_profile
 
     mkdir -p /home/steam/.config
-    echo gamescope > /home/steam/.config/ps5-next-session
+    # Default to the KDE desktop — gamescope needs network (Steam login) and
+    # the DP->HDMI bridge quirks make it the fragile path. Users switch to
+    # Gaming Mode from the desktop shortcut (writes 'gamescope' here).
+    echo desktop > /home/steam/.config/ps5-next-session
     # User PipeWire (systemd --user): post-packages symlinks system default.target, which does
     # not pull user units. Enable sockets/services under the steam user's default.target so
     # Plasma (real session bus) can connect to PipeWire.
