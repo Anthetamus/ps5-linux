@@ -59,7 +59,7 @@ newgrp docker
 ./build_image.sh --distro bazzite
 ./build_image.sh --distro bazzite-deck
 ./build_image.sh --distro batocera
-./build_image.sh --distro cachyos              # gamescope + Steam Big Picture
+./build_image.sh --distro cachyos              # KDE desktop; Gaming Mode (gamescope + Steam) via shortcut
 
 # Multi-distro image (legacy: ubuntu2604 + debian13 + arch + alpine + cachyos)
 ./build_image.sh --distro all
