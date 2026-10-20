@@ -85,8 +85,8 @@ case "$DISTRO" in
     # Artix package set grew past 12GB (pacman: "Partition / too full:
     # 58071 blocks needed, 0 blocks free" on 2026-10-16). Bump to 14GB.
     artix*)
-        if [ "$IMG_SIZE" = "12000" ]; then
-            IMG_SIZE=14000
+        if [ "$IMG_SIZE" = "12000" ] || [ "$IMG_SIZE" = "14000" ]; then
+            IMG_SIZE=16000
         fi
         ;;
     # Gaming image: Arch base + gamescope + Steam + lib32 stack. Steam is
