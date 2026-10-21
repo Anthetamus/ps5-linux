@@ -21,6 +21,15 @@ SESSION=$(printf '%s' "$SESSION" | tr -d '\r\n\t ')
 
 export LIBSEAT_BACKEND=logind
 
+# Wait for logind to assign seat0 — after kexec the seat may not be ready
+# when agetty autologin fires, causing startplasma-wayland to exit instantly.
+_wait=0
+while [ "$_wait" -lt 10 ]; do
+  loginctl seat-status seat0 >/dev/null 2>&1 && break
+  sleep 1
+  _wait=$((_wait + 1))
+done
+
 case "$SESSION" in
   desktop|plasma|plasma-wayland|plasmax11)
     # Do not `exec` Plasma: if startplasma-{wayland,x11} exits immediately the login
