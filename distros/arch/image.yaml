@@ -1,7 +1,7 @@
 image:
   name: ps5-arch
   distribution: archlinux
-  description: Arch Linux with Sway desktop
+  description: Minimal Arch Linux (console; GNOME, KDE Plasma or Sway at first boot)
   architecture: x86_64
 
 source:
@@ -21,66 +21,36 @@ packages:
 
   sets:
   - packages:
-    # Sway / Wayland desktop
-    - sway
-    - swaylock
-    - swayidle
-    - swaybg
-    - foot
-    - wofi
-    - waybar
-    - mako
-    - grim
-    - slurp
-    - wl-clipboard
-    - xorg-xwayland
+    # Console-only base, no default user. First boot asks for locale,
+    # keyboard, timezone and an account, then offers GNOME, KDE Plasma or
+    # Sway (ps5-install-desktop), which can also be run later.
 
-    # Audio / media
-    - pipewire
-    - wireplumber
-    - pipewire-pulse
-
-    # Display / GPU (AMD)
-    - mesa
-    - vulkan-radeon
-    - libva-mesa-driver
-    - xf86-video-amdgpu
-    - libinput
-    - xkeyboard-config
-
-    # File manager / apps
-    - thunar
-    - firefox
-
-    # Networking
+    # Networking (SSH installed but not enabled)
     - networkmanager
-    - linux-firmware
+    - openssh
+
+    # Firmware: AMD GPU + misc (the NXP wifi blob comes from the EFI partition)
+    - linux-firmware-amdgpu
+    - linux-firmware-other
 
     # System
     - base
-    - openssh
     - sudo
     - nano
-    - bash
+    - polkit
     - mkinitcpio
     - kmod
+    - kexec-tools
+    # proptest for ps5-console-bpc (8 bpc display cap). Temporary: remove with
+    # ps5-console-bpc once the 8 bpc kernel default (ps5-linux-patches PR #1)
+    # is merged.
+    - libdrm
+    # grow-rootfs; python also runs ps5-monitors-xml (GNOME)
     - e2fsprogs
     - parted
     - gptfdisk
     - cloud-guest-utils
-    - polkit
-    - dbus
-    - seatd
-    - kexec-tools
-
-    # Fonts
-    - ttf-dejavu
-    - ttf-liberation
-    - noto-fonts
-    - noto-fonts-cjk
-    - noto-fonts-emoji
-    - ttf-font-awesome
-    - fontconfig
+    - python
     action: install
 
 files:
@@ -108,14 +78,45 @@ files:
   generator: copy
   source: /tmp/build-staging/grow-rootfs.service
 
+- path: /usr/local/sbin/ps5-first-boot-setup
+  generator: copy
+  source: /tmp/build-staging/ps5-first-boot-setup
+  mode: "0755"
+
+- path: /etc/systemd/system/ps5-first-boot-setup.service
+  generator: copy
+  source: /tmp/build-staging/ps5-first-boot-setup.service
+
+- path: /usr/local/sbin/ps5-install-desktop
+  generator: copy
+  source: /tmp/build-staging/ps5-install-desktop
+  mode: "0755"
+
+- path: /usr/local/sbin/ps5-monitors-xml
+  generator: copy
+  source: /tmp/build-staging/ps5-monitors-xml
+  mode: "0755"
+
+- path: /etc/systemd/system/ps5-monitors-xml.service
+  generator: copy
+  source: /tmp/build-staging/ps5-monitors-xml.service
+
+- path: /usr/local/sbin/ps5-console-bpc
+  generator: copy
+  source: /tmp/build-staging/ps5-console-bpc
+  mode: "0755"
+
+- path: /etc/systemd/system/ps5-console-bpc.service
+  generator: copy
+  source: /tmp/build-staging/ps5-console-bpc.service
+
+- path: /etc/systemd/system-preset/10-ps5.preset
+  generator: copy
+  source: /tmp/build-staging/10-ps5.preset
+
 - path: /opt/pkgs/
   generator: copy
   source: /tmp/build-staging/pkgs
-
-- path: /usr/local/sbin/first-boot-setup
-  generator: copy
-  source: /tmp/build-staging/first-boot-setup
-  mode: "0755"
 
 actions:
 - trigger: post-unpack
@@ -134,72 +135,57 @@ actions:
         | sed 's/^#Server/Server/' > /etc/pacman.d/mirrorlist
     pacman -Syy --noconfirm
 
-
 - trigger: post-packages
   action: |-
     #!/bin/bash
     set -eux
-    # fc-cache / systemctl can SIGSEGV under QEMU when image plat is linux/amd64 on arm64 hosts.
-    fc-cache -f 2>/dev/null || true
-
-    symlink_wants() {
-      local src=$1
-      local target=$2
-      [ -e "$src" ] || return 0
-      mkdir -p "/etc/systemd/system/${target}.wants"
-      ln -sf "$src" "/etc/systemd/system/${target}.wants/$(basename "$src")"
-    }
-
+    # SSH installed but not enabled; root login off
     sed -i 's/^#*PermitRootLogin.*/PermitRootLogin no/'               /etc/ssh/sshd_config
     sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-    symlink_wants /usr/lib/systemd/system/sshd.service multi-user.target
-    symlink_wants /usr/lib/systemd/system/NetworkManager.service multi-user.target
-    symlink_wants /usr/lib/systemd/system/seatd.service multi-user.target
-    for s in pipewire pipewire-pulse wireplumber; do
-      symlink_wants "/usr/lib/systemd/system/${s}.service" default.target || true
-    done
+
+    # Defaults until first boot asks (en_US.UTF-8, us keyboard, UTC)
+    sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+    locale-gen
+    echo 'LANG=en_US.UTF-8' > /etc/locale.conf
+    echo 'KEYMAP=us' > /etc/vconsole.conf
+    ln -sf /usr/share/zoneinfo/Etc/UTC /etc/localtime
 
 - trigger: post-files
   action: |-
     #!/bin/bash
     set -eux
-    mkdir -p /etc/systemd/system/local-fs.target.wants
-    ln -sf /etc/systemd/system/grow-rootfs.service \
-      /etc/systemd/system/local-fs.target.wants/grow-rootfs.service
+    # Enable units with symlinks: systemctl can SIGSEGV under QEMU when the
+    # image platform is linux/amd64 on arm64 hosts.
+    wants() {
+      mkdir -p "/etc/systemd/system/$2.wants"
+      ln -sf "$1" "/etc/systemd/system/$2.wants/$(basename "$1")"
+    }
+    wants /usr/lib/systemd/system/NetworkManager.service multi-user.target
+    wants /etc/systemd/system/grow-rootfs.service local-fs.target
+    wants /etc/systemd/system/ps5-console-bpc.service sysinit.target
+    wants /etc/systemd/system/ps5-first-boot-setup.service multi-user.target
+    # ps5-monitors-xml.service is enabled by ps5-install-desktop (GNOME only)
+    ln -sf /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target
 
-    # Create default user (ps5/ps5)
-    useradd -m -G wheel,seat -s /bin/bash ps5
-    echo "ps5:ps5" | chpasswd
-    echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
-
-    # Sway config + auto-start on tty1 login
-    mkdir -p /home/ps5/.config/sway
-    cp /etc/sway/config /home/ps5/.config/sway/config
-    {
-        echo 'if [ "$(tty)" = "/dev/tty1" ] && [ -z "$WAYLAND_DISPLAY" ]; then'
-        echo '    export XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"'
-        echo '    mkdir -p "$XDG_RUNTIME_DIR"'
-        echo '    chmod 700 "$XDG_RUNTIME_DIR"'
-        echo '    exec sway'
-        echo 'fi'
-    } >> /home/ps5/.bash_profile
-    chown -R ps5:ps5 /home/ps5
-
-    # Ensure vconsole.conf exists (needed by mkinitcpio sd-vconsole hook)
-    [ -f /etc/vconsole.conf ] || echo "KEYMAP=us" > /etc/vconsole.conf
+    # No default user: ps5-first-boot-setup asks for locale, keyboard,
+    # timezone, username and password on tty1 at first boot. Root is
+    # locked; sudo asks for the password.
+    passwd -l root
+    echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/wheel
+    chmod 0440 /etc/sudoers.d/wheel
+    printf 'ps5\n' > /etc/hostname
 
     # Drop autodetect — it detects the build host's hardware, not the target.
     # This produces a larger but hardware-independent initramfs.
     sed -i 's/ autodetect//' /etc/mkinitcpio.conf
 
     # Install custom kernel packages
-    if ls /opt/pkgs/*.pkg.tar.zst 1>/dev/null 2>&1; then
-        pacman -U --noconfirm --ask 4 /opt/pkgs/*.pkg.tar.zst
-        rm -rf /opt/pkgs
-        KVER=$(ls -1t /lib/modules | head -1)
-        # mkinitcpio may warn about missing optional modules; don't fail on those
-        mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
-    fi
+    pacman -U --noconfirm --ask 4 /opt/pkgs/*.pkg.tar.zst
+    rm -rf /opt/pkgs
+    KVER=$(ls -1t /lib/modules | head -1)
+    # mkinitcpio may warn about missing optional modules; don't fail on those
+    mkinitcpio -k "$KVER" -g "/boot/initrd.img-$KVER" || true
+    [ -s "/boot/initrd.img-$KVER" ]
 
     mkdir -p /boot/efi
     /etc/kernel/postinst.d/zz-update-boot

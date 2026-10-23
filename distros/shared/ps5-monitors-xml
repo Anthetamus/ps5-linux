@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+# Writes /etc/xdg/monitors.xml capping every connected monitor at 8 bpc.
+#
+# The PS5 routes its DP output through a DP->HDMI bridge that shows a black
+# image when the link runs above 8 bpc. mutter leaves the connector's
+# "max bpc" at the amdgpu default (16) unless monitors.xml sets <maxbpc>, and
+# a <maxbpc> entry needs the exact monitor spec + mode, so build it from the
+# EDID of whatever is plugged in. Runs before GDM; a user's own
+# ~/.config/monitors.xml takes precedence.
+#
+# Temporary: remove once the 8 bpc kernel default (ps5-linux-patches PR #1)
+# is merged. GNOME worked without
+# this file on a kernel with that patch.
+import glob
+import os
+import sys
+import time
+
+OUT = "/etc/xdg/monitors.xml"
+
+
+def edid_string(desc):
+    s = desc[5:18].split(b"\n", 1)[0]
+    return s.decode("cp437").rstrip(" ")
+
+
+def parse(edid):
+    if len(edid) < 128 or edid[:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00":
+        return None
+    v = int.from_bytes(edid[8:10], "big")
+    vendor = "".join(chr(((v >> s) & 0x1f) + 64) for s in (10, 5, 0))
+    product_code = int.from_bytes(edid[10:12], "little")
+    serial_number = int.from_bytes(edid[12:16], "little")
+    name = serial = mode = None
+    for off in (54, 72, 90, 108):
+        d = edid[off:off + 18]
+        clock = int.from_bytes(d[0:2], "little")
+        if clock:
+            # First detailed timing descriptor is the preferred mode
+            if mode is None and not d[17] & 0x80:
+                hact = d[2] | (d[4] >> 4) << 8
+                hblank = d[3] | (d[4] & 0xf) << 8
+                vact = d[5] | (d[7] >> 4) << 8
+                vblank = d[6] | (d[7] & 0xf) << 8
+                rate = clock * 10000 / ((hact + hblank) * (vact + vblank))
+                mode = (hact, vact, rate)
+        elif d[3] == 0xfc:
+            name = edid_string(d)
+        elif d[3] == 0xff:
+            serial = edid_string(d)
+    if mode is None:
+        return None
+    # Same fallbacks as mutter's set_output_details_from_edid()
+    return {
+        "vendor": vendor,
+        "product": name or "0x%04x" % product_code,
+        "serial": serial or "0x%08x" % serial_number,
+        "mode": mode,
+    }
+
+
+def connected_monitors():
+    monitors = []
+    for path in sorted(glob.glob("/sys/class/drm/card[0-9]*-*")):
+        try:
+            with open(os.path.join(path, "status")) as f:
+                if f.read().strip() != "connected":
+                    continue
+            with open(os.path.join(path, "edid"), "rb") as f:
+                info = parse(f.read())
+        except OSError:
+            continue
+        if info:
+            info["connector"] = os.path.basename(path).split("-", 1)[1]
+            monitors.append(info)
+    return monitors
+
+
+def xml_escape(s):
+    return (s.replace("&", "&amp;").replace("<", "&lt;")
+             .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def main():
+    # amdgpu may still be probing connectors when this starts
+    for _ in range(20):
+        monitors = connected_monitors()
+        if monitors:
+            break
+        time.sleep(0.5)
+    else:
+        print("ps5-monitors-xml: no connected monitor with EDID, leaving", OUT)
+        return 0
+
+    out = ['<monitors version="2">', "  <configuration>"]
+    x = 0
+    for i, m in enumerate(monitors):
+        w, h, rate = m["mode"]
+        out += [
+            "    <logicalmonitor>",
+            "      <x>%d</x>" % x,
+            "      <y>0</y>",
+            "      <scale>1</scale>",
+        ]
+        if i == 0:
+            out.append("      <primary>yes</primary>")
+        out += [
+            "      <monitor>",
+            "        <monitorspec>",
+            "          <connector>%s</connector>" % xml_escape(m["connector"]),
+            "          <vendor>%s</vendor>" % xml_escape(m["vendor"]),
+            "          <product>%s</product>" % xml_escape(m["product"]),
+            "          <serial>%s</serial>" % xml_escape(m["serial"]),
+            "        </monitorspec>",
+            "        <mode>",
+            "          <width>%d</width>" % w,
+            "          <height>%d</height>" % h,
+            "          <rate>%.3f</rate>" % rate,
+            "        </mode>",
+            "        <maxbpc>8</maxbpc>",
+            "      </monitor>",
+            "    </logicalmonitor>",
+        ]
+        x += w
+        print("ps5-monitors-xml: %s %s %s %s %dx%d@%.3f maxbpc=8" % (
+            m["connector"], m["vendor"], m["product"], m["serial"], w, h, rate))
+    out += ["  </configuration>", "</monitors>", ""]
+
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    tmp = OUT + ".tmp"
+    with open(tmp, "w") as f:
+        f.write("\n".join(out))
+    os.replace(tmp, OUT)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

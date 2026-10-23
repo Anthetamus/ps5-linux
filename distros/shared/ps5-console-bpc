@@ -1,0 +1,41 @@
+#!/bin/bash
+# Caps the PS5's display output at 8 bpc for the text console.
+#
+# amdgpu starts every connector at "max bpc" 16, so the link runs as deep as
+# the monitor's EDID allows. Above 1080p (e.g. 2560x1440@60, which the PS5
+# patches do allow) that is more than the PS5's DP->HDMI bridge carries and
+# the screen stays black; GNOME has the same problem (see ps5-monitors-xml).
+# Setting the property re-commits the console's mode at 8 bpc, and the cap
+# stays on the connector when the console takes the display back after
+# proptest exits. Never fails the boot; problems are only logged.
+#
+# Temporary: remove once the 8 bpc kernel default (ps5-linux-patches PR #1)
+# is merged.
+
+# amdgpu loads in the initramfs, but give it a moment if it isn't up yet
+for _ in $(seq 1 15); do
+    PROPS=$(proptest -M amdgpu 2>/dev/null) && [ -n "$PROPS" ] && break
+    PROPS=
+    sleep 1
+done
+if [ -z "$PROPS" ]; then
+    echo "ps5-console-bpc: amdgpu not available, nothing to do"
+    exit 0
+fi
+
+# "Connector 99 (DP-1)" followed by its properties, e.g. "	106 max bpc:"
+TARGETS=$(awk '/^Connector [0-9]+ / { id = $2; name = $3; gsub(/[()]/, "", name) }
+               /^\t[0-9]+ max bpc:/ { print id, $1, name }' <<<"$PROPS")
+if [ -z "$TARGETS" ]; then
+    echo "ps5-console-bpc: no connector with a max bpc property"
+    exit 0
+fi
+
+while read -r id prop name; do
+    if proptest -M amdgpu "$id" connector "$prop" 8 >/dev/null 2>&1; then
+        echo "ps5-console-bpc: $name (connector $id) capped at 8 bpc"
+    else
+        echo "ps5-console-bpc: setting max bpc on $name (connector $id) failed"
+    fi
+done <<<"$TARGETS"
+exit 0
