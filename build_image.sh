@@ -9,7 +9,7 @@ KERNEL_SRC=""
 CLEAN=false
 IMG_SIZE=12000
 KERNEL_ONLY=false
-PATCHES_REF="kernel-7.3.0-rc6-b40365b-rmx-34bcc1536"
+PATCHES_REF="kernel-7.3.0-rc6-6097119-rmx-4af56be0a"
 MWIFIEX_REF="4bce848dd098bf74fbafd0078463da3d9f0d7f80"
 
 MULTI_DISTROS="ubuntu2604 debian13 arch alpine cachyos"
