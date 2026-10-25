@@ -1,0 +1,19 @@
+# Temporary: remove once the 8 bpc kernel default (ps5-linux-patches PR #1)
+# is merged.
+[Unit]
+Description=PS5: cap the display at 8 bpc for the console (DP->HDMI bridge black screen)
+# Run as early as possible: the console stays black until this has run. It
+# only needs the DRM device (amdgpu loads in the initramfs), so don't wait for
+# basic.target, which on first boot includes grow-rootfs and other slow jobs.
+DefaultDependencies=no
+After=systemd-udev-trigger.service systemd-modules-load.service
+Before=getty@tty1.service ps5-first-boot-setup.service display-manager.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-console-bpc
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

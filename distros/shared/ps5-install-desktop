@@ -1,0 +1,319 @@
+#!/bin/bash
+# Install a desktop (GNOME, KDE Plasma or Sway, all Wayland) on the PS5 Arch
+# image. Lists every package; optional ones can be deselected.
+#
+#   sudo ps5-install-desktop [gnome|kde|sway] [--no-autologin]
+#
+# GNOME logs in through GDM. KDE Plasma and Sway start from the tty1 login,
+# with no display manager (as on the CachyOS image). Without --no-autologin it
+# asks whether to log in automatically as the user who ran sudo.
+# Also run by ps5-first-boot-setup (--first-boot --user NAME).
+set -euo pipefail
+
+[ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
+
+DESKTOP=
+AUTOLOGIN=ask
+FIRST_BOOT=0
+LOGIN_USER=${SUDO_USER:-}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        gnome|kde|sway) DESKTOP=$1 ;;
+        --no-autologin) AUTOLOGIN=no ;;
+        --first-boot) FIRST_BOOT=1 ;;
+        --user) LOGIN_USER=$2; shift ;;
+        -h|--help) sed -n '2,10s/^# \{0,1\}//p' "$0"; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+[ "$LOGIN_USER" = root ] && LOGIN_USER=
+export TERM=${TERM:-linux}
+
+# Kernel messages (the wifi driver is chatty) are drawn straight over the
+# dialogs and the install output: show only critical ones while this runs.
+OLD_LOGLEVEL=$(awk '{ print $1 }' /proc/sys/kernel/printk 2>/dev/null || true)
+dmesg -n 3 2>/dev/null || true
+restore_loglevel() {
+    if [ -n "$OLD_LOGLEVEL" ]; then dmesg -n "$OLD_LOGLEVEL" 2>/dev/null || true; fi
+}
+trap restore_loglevel EXIT
+
+read -r ROWS COLS < <(stty size 2>/dev/null || echo "24 80")
+W=$(( COLS > 100 ? 96 : COLS - 4 ))
+TITLE="PS5 desktop setup"
+
+# --- Package lists -----------------------------------------------------------
+# REQUIRED is always installed. OPTIONAL is "package|description"; all start
+# selected. pacman doesn't install optional dependencies, so the list is
+# exactly what gets added (plus dependencies).
+set_packages() {
+    case "$DESKTOP" in
+    gnome)
+        REQUIRED=(gdm gnome-shell gnome-session gnome-settings-daemon
+                  gnome-control-center gnome-keyring xdg-desktop-portal-gnome
+                  mesa pipewire pipewire-pulse wireplumber noto-fonts)
+        OPTIONAL=(
+            "nautilus|Files (file manager)"
+            "gnome-console|Console (terminal)"
+            "gnome-text-editor|Text Editor"
+            "gnome-system-monitor|System Monitor"
+            "gnome-disk-utility|Disks"
+            "gnome-calculator|Calculator"
+            "loupe|Image Viewer"
+            "papers|Document Viewer (PDF)"
+            "firefox|Firefox web browser"
+            "gvfs|Trash, network and removable drives in Files"
+            "gnome-backgrounds|Default wallpapers"
+            "gnome-menus|Legacy application menu support"
+            "xdg-user-dirs-gtk|Creates Documents, Downloads, ... folders"
+            "vulkan-radeon|Vulkan driver for the PS5 GPU"
+            "ttf-dejavu|DejaVu fonts"
+        ) ;;
+    kde)
+        REQUIRED=(plasma-desktop xdg-desktop-portal-kde mesa
+                  pipewire pipewire-pulse wireplumber noto-fonts)
+        OPTIONAL=(
+            "dolphin|Dolphin (file manager)"
+            "konsole|Konsole (terminal)"
+            "kate|Kate (text editor)"
+            "plasma-nm|Network/wifi applet"
+            "plasma-pa|Volume applet"
+            "bluedevil|Bluetooth applet"
+            "powerdevil|Power management"
+            "kscreen|Display settings"
+            "plasma-systemmonitor|System Monitor"
+            "kinfocenter|Info Center"
+            "spectacle|Screenshots"
+            "gwenview|Image viewer"
+            "okular|Document viewer (PDF)"
+            "ark|Archive manager"
+            "breeze-gtk|Breeze theme for GTK apps"
+            "kde-gtk-config|GTK app settings in System Settings"
+            "firefox|Firefox web browser"
+            "xdg-user-dirs|Creates Documents, Downloads, ... folders"
+            "vulkan-radeon|Vulkan driver for the PS5 GPU"
+            "ttf-dejavu|DejaVu fonts"
+        ) ;;
+    sway)
+        # foot, wmenu and swaybg are the terminal, launcher and wallpaper
+        # tool of sway's default config
+        REQUIRED=(sway swaybg foot wmenu xdg-desktop-portal-wlr mesa
+                  pipewire pipewire-pulse wireplumber noto-fonts)
+        OPTIONAL=(
+            "swaylock|Screen locker"
+            "swayidle|Idle management (lock/blank after inactivity)"
+            "mako|Notifications"
+            "grim|Screenshots"
+            "slurp|Select a region for screenshots"
+            "wl-clipboard|Clipboard tools (wl-copy, wl-paste)"
+            "xorg-xwayland|Run X11 apps"
+            "thunar|Thunar (file manager)"
+            "firefox|Firefox web browser"
+            "vulkan-radeon|Vulkan driver for the PS5 GPU"
+            "ttf-dejavu|DejaVu fonts"
+            "noto-fonts-cjk|Chinese, Japanese, Korean fonts"
+            "noto-fonts-emoji|Emoji font"
+        ) ;;
+    esac
+}
+
+# --- Choose desktop ----------------------------------------------------------
+if [ -z "$DESKTOP" ]; then
+    if [ "$FIRST_BOOT" -eq 1 ]; then NONE="Minimal console, no desktop (install one later with sudo ps5-install-desktop)"
+    else NONE="Cancel"; fi
+    DESKTOP=$(whiptail --title "$TITLE" --notags --default-item none --menu \
+        "Choose a desktop. All run on Wayland. The next screen lists every package." \
+        14 "$W" 4 \
+        gnome "GNOME" \
+        kde   "KDE Plasma" \
+        sway  "Sway (tiling window manager)" \
+        none  "$NONE" 3>&1 1>&2 2>&3) || DESKTOP=none
+fi
+[ "$DESKTOP" = none ] && exit 0
+set_packages
+case "$DESKTOP" in
+    gnome) NAME=GNOME ;;
+    kde)   NAME="KDE Plasma" ;;
+    sway)  NAME=Sway ;;
+esac
+
+# --- Choose packages ---------------------------------------------------------
+ITEMS=()
+for e in "${OPTIONAL[@]}"; do ITEMS+=("${e%%|*}" "${e#*|}" ON); done
+LIST_H=$(( ${#OPTIONAL[@]} < ROWS - 16 ? ${#OPTIONAL[@]} : ROWS - 16 ))
+SELECTED=$(whiptail --title "$TITLE: $NAME packages" --separate-output --checklist \
+"Always installed: ${REQUIRED[*]}
+
+Optional (Space toggles, Enter continues):" \
+    $(( LIST_H + 14 )) "$W" "$LIST_H" "${ITEMS[@]}" 3>&1 1>&2 2>&3) || exit 0
+mapfile -t SELECTED <<<"$SELECTED"
+DESELECTED=()
+for e in "${OPTIONAL[@]}"; do
+    p=${e%%|*}
+    printf '%s\n' "${SELECTED[@]}" | grep -qxF "$p" || DESELECTED+=("$p")
+done
+INSTALL=("${REQUIRED[@]}")
+for p in "${SELECTED[@]}"; do [ -n "$p" ] && INSTALL+=("$p"); done
+
+if [ "$AUTOLOGIN" = ask ]; then
+    AUTOLOGIN=no
+    [ -n "$LOGIN_USER" ] && whiptail --title "$TITLE" --yesno \
+        "Log in to $NAME automatically as $LOGIN_USER at boot?" 8 "$W" && AUTOLOGIN=yes
+fi
+
+# --- Network -----------------------------------------------------------------
+while [ "$(nmcli -t -f STATE general 2>/dev/null)" != connected ]; do
+    ACTION=$(whiptail --title "$TITLE" --notags --menu \
+        "No internet connection. $NAME is downloaded during the install." 12 "$W" 3 \
+        nmtui "Connect to a network (wifi or ethernet)" \
+        retry "Check again" \
+        skip  "Skip, stay on the console" 3>&1 1>&2 2>&3) || ACTION=skip
+    case "$ACTION" in
+        nmtui) nmtui connect || true ;;
+        retry) sleep 3 ;;
+        skip)  exit 0 ;;
+    esac
+done
+
+whiptail --title "$TITLE" --yes-button Install --no-button Cancel --yesno \
+"Ready to install $NAME: ${#INSTALL[@]} packages selected, which pull in more as dependencies (roughly 0.3-1.5 GB to download).
+
+On a slow USB stick this can take 10-40 minutes. Do not switch off the PS5 until it says it is done: an interrupted install leaves a half-installed system." \
+    14 "$W" || exit 0
+clear 2>/dev/null || true
+
+# --- Install -----------------------------------------------------------------
+echo "=== Installing $NAME ==="
+echo "Packages: ${INSTALL[*]}"
+[ ${#DESELECTED[@]} -gt 0 ] && echo "Skipped:  ${DESELECTED[*]}"
+# An install cut off by a power-off leaves pacman's lock behind
+if [ -e /var/lib/pacman/db.lck ] && ! pgrep -x pacman >/dev/null; then
+    echo "Removing the lock of an interrupted pacman run"
+    rm -f /var/lib/pacman/db.lck
+fi
+# On first boot archlinux-keyring-wkd-sync refreshes pacman's keyring as soon
+# as the network is up. A pacman run during that failed before installing
+# anything, so wait for it to finish.
+while [ "$(systemctl show -p ActiveState --value archlinux-keyring-wkd-sync.service 2>/dev/null)" = activating ]; do
+    echo "Waiting for the pacman keyring refresh to finish ..."
+    sleep 5
+done
+# Retry a couple of times: mirrors and the network fail now and then
+for attempt in 1 2 3; do
+    pacman -Syu --needed --noconfirm "${INSTALL[@]}" && break
+    if [ "$attempt" -eq 3 ]; then
+        echo
+        echo "Installing $NAME failed (see the pacman messages above)."
+        read -rp "Press Enter to continue " _ || true
+        exit 1
+    fi
+    echo "pacman failed, trying again in 10 seconds (attempt $((attempt + 1)) of 3) ..."
+    sleep 10
+done
+
+# --- Configure ---------------------------------------------------------------
+DROPIN=/etc/systemd/system/getty@tty1.service.d/ps5-autologin.conf
+# Only one desktop starts from the tty1 login; drop the others' scripts
+rm -f /etc/profile.d/ps5-plasma.sh /etc/profile.d/ps5-sway.sh
+
+# tty1_autologin: let getty log LOGIN_USER in on tty1 if autologin was chosen
+tty1_autologin() {
+    if [ "$AUTOLOGIN" = yes ]; then
+        mkdir -p "$(dirname "$DROPIN")"
+        cat > "$DROPIN" <<EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $LOGIN_USER --noclear %I \$TERM
+EOF
+    else
+        rm -f "$DROPIN"
+    fi
+    systemctl disable ps5-monitors-xml.service gdm.service 2>/dev/null || true
+    systemctl set-default multi-user.target
+    systemctl daemon-reload
+}
+
+case "$DESKTOP" in
+gnome)
+    # Keep the display on and never auto-suspend (suspend is untested on PS5)
+    cat > /usr/share/glib-2.0/schemas/90_ps5.gschema.override <<'EOF'
+[org.gnome.desktop.session]
+idle-delay=0
+
+[org.gnome.settings-daemon.plugins.power]
+sleep-inactive-ac-type='nothing'
+sleep-inactive-battery-type='nothing'
+EOF
+    glib-compile-schemas /usr/share/glib-2.0/schemas
+
+    mkdir -p /etc/gdm
+    printf '[daemon]\n' > /etc/gdm/custom.conf
+    if [ "$AUTOLOGIN" = yes ]; then
+        sed -i "/^\[daemon\]/a AutomaticLoginEnable=true\nAutomaticLogin=$LOGIN_USER" /etc/gdm/custom.conf
+    fi
+
+    # 8 bpc monitors.xml for GNOME, generated from the EDID before GDM starts
+    # (the PS5's DP->HDMI bridge shows a black screen at mutter's default 16 bpc).
+    # Temporary: drop once the 8 bpc kernel default (ps5-linux-patches PR #1)
+    # is merged.
+    systemctl enable ps5-monitors-xml.service
+    systemctl enable --force gdm
+    systemctl set-default graphical.target
+    rm -f "$DROPIN"
+    ;;
+kde)
+    # Plasma starts from the tty1 login shell (no display manager), as on the
+    # CachyOS image. The KWin variables avoid HDR / 10 bpc output, which the
+    # PS5's DP->HDMI bridge shows as a black screen.
+    cat > /etc/profile.d/ps5-plasma.sh <<'EOF'
+# ps5-install-desktop: start KDE Plasma (Wayland) after logging in on tty1.
+# Create ~/.config/ps5-no-desktop to stay on the console.
+if [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY-}${DISPLAY-}" ] \
+   && [ ! -e "$HOME/.config/ps5-no-desktop" ] && command -v startplasma-wayland >/dev/null; then
+    export KWIN_FORCE_ASSUME_HDR_SUPPORT=0
+    export KWIN_DRM_PREFER_COLOR_DEPTH=24
+    mkdir -p "$HOME/.cache"
+    startplasma-wayland >"$HOME/.cache/ps5-plasma.log" 2>&1 || true
+fi
+EOF
+
+    # Never auto-suspend (suspend is untested on PS5) or blank the screen
+    cat > /etc/xdg/powerdevilrc <<'EOF'
+[AC][SuspendAndShutdown]
+AutoSuspendAction=0
+
+[AC][Display]
+DimDisplayWhenIdle=false
+TurnOffDisplayWhenIdle=false
+EOF
+    tty1_autologin
+    ;;
+sway)
+    # Sway starts from the tty1 login shell, like Plasma, with its default
+    # config (/etc/sway/config; copy it to ~/.config/sway/config to change it)
+    cat > /etc/profile.d/ps5-sway.sh <<'EOF'
+# ps5-install-desktop: start Sway (Wayland) after logging in on tty1.
+# Create ~/.config/ps5-no-desktop to stay on the console.
+if [ "$(tty)" = /dev/tty1 ] && [ -z "${WAYLAND_DISPLAY-}${DISPLAY-}" ] \
+   && [ ! -e "$HOME/.config/ps5-no-desktop" ] && command -v sway >/dev/null; then
+    export XDG_CURRENT_DESKTOP=sway
+    mkdir -p "$HOME/.cache"
+    sway >"$HOME/.cache/ps5-sway.log" 2>&1 || true
+fi
+EOF
+    tty1_autologin
+    ;;
+esac
+
+if [ "$FIRST_BOOT" -eq 1 ]; then
+    # The boot is still on its way to multi-user.target; queue the graphical
+    # target behind it so GDM starts once first-boot setup exits.
+    [ "$DESKTOP" = gnome ] && systemctl --no-block start ps5-monitors-xml.service graphical.target
+    echo "=== $NAME installed ==="
+elif [ "$DESKTOP" = gnome ]; then
+    echo "=== $NAME installed. Start it with: sudo systemctl start ps5-monitors-xml display-manager ==="
+else
+    echo "=== $NAME installed. Log out and log in again on tty1 to start it. ==="
+fi

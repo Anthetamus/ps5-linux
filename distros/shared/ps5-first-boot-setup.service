@@ -1,0 +1,23 @@
+[Unit]
+Description=PS5 first boot: locale, keyboard, timezone, account and desktop
+# Run before the tty1 login prompt (and GDM) so nothing races the prompt.
+Before=getty@tty1.service display-manager.service
+After=systemd-user-sessions.service
+ConditionPathExists=!/etc/ps5-first-boot-done
+
+[Service]
+Type=oneshot
+# May download and install a desktop
+TimeoutStartSec=infinity
+ExecStart=/usr/local/sbin/ps5-first-boot-setup
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

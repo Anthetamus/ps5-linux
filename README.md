@@ -18,7 +18,7 @@ Pre-built `.img.xz` files for every distro below are published on the [`latest`]
 | Debian 13 (Trixie) — KDE | KDE Plasma | `.deb` | full KDE stack |
 | Debian 13 (Trixie) — Server | tty1 autologin | `.deb` | headless, no DE |
 | Debian 13 + Proxmox VE 9 | Proxmox web UI | `.deb` | KVM/LXC, pinned Debian kernel replaced with linux-ps5 |
-| Arch | Sway | `.pkg.tar.zst` | rolling |
+| Arch | Console; GNOME, KDE Plasma or Sway chosen at first boot | `.pkg.tar.zst` | rolling; no default user, first-boot setup asks for locale, keyboard, timezone and account (`distros/shared/ps5-install-desktop.md`) |
 | EndeavourOS | KDE Plasma (SDDM) | `.pkg.tar.zst` | Arch + `[endeavouros]` repo, welcome app |
 | CachyOS | KDE Plasma (desktop-first) | `.pkg.tar.zst` | Arch + `[cachyos]` repo; Gaming Mode (gamescope + Steam BPM) via desktop shortcut |
 | Alpine 3.21 | OpenRC tty | extracted `.deb` | musl, minimal |
@@ -145,7 +145,7 @@ docker/
 distros/
   ubuntu2604/                   # Ubuntu 26.04
   debian13-{xfce,server,gnome,kde,proxmox}/
-  arch/                         # Arch Linux
+  arch/                         # Arch Linux (minimal console, desktop at first boot)
   endeavoros/                   # EndeavourOS (Arch + [endeavouros] repo, KDE Plasma)
   cachyos/                      # CachyOS + Gamescope/Steam
   alpine/                       # Alpine 3.21

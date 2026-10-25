@@ -1,0 +1,7 @@
+# The image ships without a machine ID, so on first boot systemd enables units
+# from its upstream presets. NetworkManager manages the network here: keep
+# systemd-networkd off, or both manage the same interfaces and
+# systemd-networkd-wait-online stalls the boot for 2 minutes. homed is unused.
+disable systemd-networkd*
+disable systemd-network-generator.service
+disable systemd-homed*

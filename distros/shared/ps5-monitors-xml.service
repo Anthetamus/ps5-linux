@@ -1,0 +1,13 @@
+# Temporary: remove once the 8 bpc kernel default (ps5-linux-patches PR #1)
+# is merged.
+[Unit]
+Description=PS5: cap monitors at 8 bpc for GNOME (DP->HDMI bridge black screen)
+After=systemd-udev-trigger.service systemd-modules-load.service
+Before=display-manager.service gdm.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ps5-monitors-xml
+
+[Install]
+WantedBy=multi-user.target

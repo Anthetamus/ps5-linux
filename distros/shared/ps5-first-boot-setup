@@ -1,0 +1,198 @@
+#!/bin/bash
+# First-boot setup on tty1 (ps5-first-boot-setup.service), in whiptail
+# dialogs: asks for the system locale, keyboard layout and timezone, creates
+# the admin user (the image ships without any login), marks itself done, then
+# offers a desktop (ps5-install-desktop: GNOME, KDE Plasma, Sway or the
+# console).
+set -e
+
+# Can't be skipped: aborting would leave a system nobody can log into.
+trap '' INT QUIT TSTP
+
+DONE=/etc/ps5-first-boot-done
+KBD_MAP=/usr/share/systemd/kbd-model-map
+ZONE_TAB=/usr/share/zoneinfo/zone1970.tab
+TITLE="PS5 first-boot setup"
+export TERM=${TERM:-linux}
+
+# Kernel messages are written straight onto the active console and would draw
+# over the dialogs (the wifi driver is chatty). Show only critical ones while
+# setup runs, then restore the previous console log level.
+OLD_LOGLEVEL=$(awk '{ print $1 }' /proc/sys/kernel/printk 2>/dev/null || true)
+dmesg -n 3 2>/dev/null || true
+restore_loglevel() {
+    if [[ -n $OLD_LOGLEVEL ]]; then dmesg -n "$OLD_LOGLEVEL" 2>/dev/null || true; fi
+    clear 2>/dev/null || true
+}
+trap restore_loglevel EXIT
+
+GROUPS_LIST=wheel
+for g in video render input audio; do
+    getent group "$g" >/dev/null && GROUPS_LIST+=",$g"
+done
+
+read -r ROWS COLS < <(stty size 2>/dev/null || echo "24 80")
+W=$(( COLS > 80 ? 76 : COLS - 4 ))
+H=$(( ROWS > 30 ? 24 : ROWS - 4 ))
+
+# whiptail with the answer on stdout; non-zero on Cancel/Esc
+wt() { whiptail --title "$TITLE" "$@" 3>&1 1>&2 2>&3; }
+msg() { wt --msgbox "$1" 10 "$W" || true; }
+
+# menu TEXT LIST [DEFAULT] [whiptail options...]: pick one line of LIST
+menu() {
+    local text=$1 list=$2 default=${3:-} items=() x
+    shift 3 || shift $#
+    while IFS= read -r x; do [[ -n $x ]] && items+=("$x" ""); done <<<"$list"
+    wt --noitem ${default:+--default-item "$default"} "$@" \
+        --menu "$text" "$H" "$W" $(( H - 8 )) "${items[@]}"
+}
+
+# search TEXT DEFAULT LIST: an input box, searched in LIST (one entry per
+# line, case-insensitive); an exact or single match is taken, several are
+# offered in a menu (Cancel there searches again). Result on stdout.
+search() {
+    local text=$1 default=$2 list=$3 q matches count
+    while true; do
+        q=$(wt --nocancel --inputbox "$text" 12 "$W" "$default") || continue
+        q=${q:-$default}
+        if grep -qxF -- "$q" <<<"$list"; then echo "$q"; return; fi
+        matches=$(grep -iF -- "$q" <<<"$list" || true)
+        count=$(grep -c . <<<"$matches" || true)
+        if [[ $count -eq 0 ]]; then
+            msg "Nothing matches '$q'."
+        elif [[ $count -eq 1 ]]; then
+            echo "$matches"; return
+        elif menu "Matches for '$q':" "$matches" "" --cancel-button "Search again"; then
+            return
+        fi
+    done
+}
+
+# --- Locale ---
+# UTF-8 locales this system can generate, from the (mostly commented-out)
+# entries in /etc/locale.gen, without the .UTF-8 suffix: "de_DE", "et_EE", ...
+LOCALES=$(sed -nE 's/^#? ?([^ #]+)\.UTF-8 UTF-8 *$/\1/p' /etc/locale.gen | sort -u)
+CHOICE=$(search "Welcome! First, the system language and region (locale).
+
+Type a locale such as en_US, de_DE or et_EE, or part of one to search (for example: de)." \
+    en_US "$LOCALES")
+LOCALE="$CHOICE.UTF-8"
+LANG_CODE=${CHOICE%%_*}                        # "de"
+COUNTRY=${CHOICE#*_}; COUNTRY=${COUNTRY%%@*}   # "DE"
+
+wt --infobox "Generating $LOCALE ..." 7 "$W" || true
+if ! grep -qE "^${LOCALE//./\\.} UTF-8" /etc/locale.gen; then
+    sed -i -E "s/^# ?(${LOCALE//./\\.} UTF-8)/\1/" /etc/locale.gen
+fi
+# A failure here must not stop the account from being created
+locale-gen >/dev/null 2>&1 || msg "locale-gen failed; $LOCALE may not work."
+echo "LANG=$LOCALE" > /etc/locale.conf
+
+# --- Keyboard layout ---
+# systemd's console keymap <-> XKB table. Columns: console keymap, XKB layout,
+# model, variant, options, and (newer systemd only) BCP 47 language tags.
+# Offered as "layout" or "layout(variant)": "de", "de(nodeadkeys)", "ee", ...
+KBD_ROWS=$(grep -v '^#' "$KBD_MAP" | awk 'NF >= 5 {
+    name = ($4 == "-" ? $2 : $2 "(" $4 ")")
+    if (!seen[name]++) print name, $1, $2, $3, $4, $5, (NF >= 6 ? $6 : "-")
+}')
+LAYOUTS=$(cut -d' ' -f1 <<<"$KBD_ROWS" | sort)
+# Default from the locale: a row tagged with the locale's language tag, else
+# a layout named after the country, else after the language, else us.
+KBD_DEFAULT=$(awk -v tag="$LANG_CODE-$COUNTRY" '$7 != "-" && index("," $7 ",", "," tag ",") { print $1; exit }' <<<"$KBD_ROWS")
+for guess in "${COUNTRY,,}" "$LANG_CODE" us; do
+    [[ -n $KBD_DEFAULT ]] && break
+    grep -qxF -- "$guess" <<<"$LAYOUTS" && KBD_DEFAULT=$guess
+done
+until CHOICE=$(menu "Keyboard layout:" "$LAYOUTS" "$KBD_DEFAULT" --nocancel); do :; done
+read -r _ KEYMAP XKB_LAYOUT XKB_MODEL XKB_VARIANT XKB_OPTIONS _ \
+    < <(awk -v n="$CHOICE" '$1 == n' <<<"$KBD_ROWS")
+[[ $XKB_VARIANT == - ]] && XKB_VARIANT=
+[[ $XKB_OPTIONS == - ]] && XKB_OPTIONS=
+
+# What systemd-localed writes; read by the console, GDM and the desktops
+echo "KEYMAP=$KEYMAP" > /etc/vconsole.conf
+mkdir -p /etc/X11/xorg.conf.d
+cat > /etc/X11/xorg.conf.d/00-keyboard.conf <<EOF
+Section "InputClass"
+        Identifier "system-keyboard"
+        MatchIsKeyboard "on"
+        Option "XkbLayout" "$XKB_LAYOUT"
+        Option "XkbModel" "$XKB_MODEL"
+        Option "XkbVariant" "$XKB_VARIANT"
+        Option "XkbOptions" "$XKB_OPTIONS"
+EndSection
+EOF
+# Apply now, so the password below is typed on the chosen layout
+loadkeys -q "$KEYMAP" 2>/dev/null || true
+
+# --- Timezone ---
+# Region menu (UTC, Africa, America, ...), then the cities of that region.
+# Default: the first zone listing the locale's country first ("DE,DK,..." ->
+# Europe/Berlin, not "CH,DE,LI" -> Europe/Zurich), else any zone listing it.
+ZONES=$(grep -v '^#' "$ZONE_TAB" | cut -f3 | sort -u)
+TZ_DEFAULT=$(awk -F'\t' -v c="$COUNTRY" '!/^#/ {
+    n = split($1, cc, ",")
+    if (cc[1] == c) { print $3; found = 1; exit }
+    for (i = 2; i <= n && !any; i++) if (cc[i] == c) any = $3
+} END { if (!found && any) print any }' "$ZONE_TAB")
+REGIONS=$( (echo UTC; cut -d/ -f1 <<<"$ZONES") | awk '!seen[$0]++')
+while true; do
+    REGION=$(menu "Timezone: region" "$REGIONS" "${TZ_DEFAULT%%/*}" --nocancel) || continue
+    if [[ $REGION == UTC ]]; then TZONE=UTC; break; fi
+    CITIES=$(sed -n "s|^$REGION/||p" <<<"$ZONES")
+    if CITY=$(menu "Timezone: $REGION" "$CITIES" "${TZ_DEFAULT#"$REGION"/}" --cancel-button Back); then
+        TZONE="$REGION/$CITY"
+        break
+    fi
+done
+ln -sf "/usr/share/zoneinfo/$TZONE" /etc/localtime
+
+# --- Account ---
+while true; do
+    USERNAME=$(wt --nocancel --inputbox "Create your user account. It can use sudo.
+
+Username (lowercase letters, digits, - and _):" 11 "$W") || continue
+    if [[ -z "$USERNAME" ]]; then
+        msg "The username cannot be empty."
+    elif ! [[ "$USERNAME" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+        msg "'$USERNAME' is not a valid username. Use lowercase letters, digits, hyphens and underscores, starting with a letter."
+    elif getent passwd "$USERNAME" >/dev/null; then
+        msg "The user $USERNAME already exists."
+    else
+        break
+    fi
+done
+
+while true; do
+    PASSWORD=$(wt --nocancel --passwordbox "Password for $USERNAME:" 9 "$W") || continue
+    PASSWORD2=$(wt --nocancel --passwordbox "Repeat the password:" 9 "$W") || continue
+    if [[ -z "$PASSWORD" ]]; then
+        msg "The password cannot be empty."
+    elif [[ "$PASSWORD" != "$PASSWORD2" ]]; then
+        msg "The passwords do not match. Try again."
+    else
+        break
+    fi
+done
+
+wt --infobox "Creating user $USERNAME ..." 7 "$W" || true
+useradd -m -G "$GROUPS_LIST" -s /bin/bash "$USERNAME"
+echo "$USERNAME:$PASSWORD" | chpasswd
+unset PASSWORD PASSWORD2
+
+touch "$DONE"
+systemctl disable ps5-first-boot-setup.service 2>/dev/null || true
+
+# --- Desktop ---
+if [[ -x /usr/local/sbin/ps5-install-desktop ]]; then
+    /usr/local/sbin/ps5-install-desktop --first-boot --user "$USERNAME" || \
+        msg "The desktop install failed. Your account is ready: log in and run
+sudo ps5-install-desktop to try again."
+fi
+
+msg "Setup is complete.
+
+Log in as $USERNAME. sudo asks for this password.
+Wifi: nmtui. Desktop later: sudo ps5-install-desktop"

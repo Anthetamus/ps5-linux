@@ -49,7 +49,11 @@ for DISTRO in $DISTROS; do
             arch)
                 cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
                 cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
-                cp /repo/distros/arch/first-boot-setup         "$STAGING/"
+                for f in ps5-first-boot-setup ps5-first-boot-setup.service ps5-install-desktop \
+                         ps5-monitors-xml ps5-monitors-xml.service \
+                         ps5-console-bpc ps5-console-bpc.service 10-ps5.preset; do
+                    cp "/repo/distros/shared/$f" "$STAGING/"
+                done
                 cp /kernel-debs/*.pkg.tar.zst                  "$STAGING/pkgs/"
                 ;;
             cachyos)

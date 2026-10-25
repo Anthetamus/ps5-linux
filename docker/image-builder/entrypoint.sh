@@ -91,7 +91,19 @@ EOF
             mkdir -p "$STAGING/pkgs"
             cp /kernel-debs/*.pkg.tar.zst                    "$STAGING/pkgs/"
             ;;
-        arch|endeavoros)
+        arch)
+            cp /repo/distros/arch/grow-rootfs              "$STAGING/"
+            cp /repo/distros/arch/grow-rootfs.service      "$STAGING/"
+            # First-boot setup, desktop installer, console 8 bpc cap
+            for f in ps5-first-boot-setup ps5-first-boot-setup.service ps5-install-desktop \
+                     ps5-monitors-xml ps5-monitors-xml.service \
+                     ps5-console-bpc ps5-console-bpc.service 10-ps5.preset; do
+                cp "/repo/distros/shared/$f" "$STAGING/"
+            done
+            mkdir -p "$STAGING/pkgs"
+            cp /kernel-debs/*.pkg.tar.zst                  "$STAGING/pkgs/"
+            ;;
+        endeavoros)
             cp /repo/distros/${DISTRO}/grow-rootfs         "$STAGING/"
             cp /repo/distros/${DISTRO}/grow-rootfs.service "$STAGING/"
             cp /repo/distros/${DISTRO}/first-boot-setup    "$STAGING/"
@@ -2074,6 +2086,15 @@ echo "=== Assembling boot partition ==="
 mv /tmp/usb_root/boot/efi/* /tmp/usb_efi/ 2>/dev/null || true
 sed "s|__DISTRO__|$ROOT_LABEL|" /repo/boot/cmdline.txt > /tmp/usb_efi/cmdline.txt
 case "$DISTRO" in
+    arch)
+        # Console at the monitor's preferred (native) mode instead of the
+        # forced 1080p, which a 1440p/4K monitor upscales into a soft console.
+        # Only works together with ps5-console-bpc.service (8 bpc cap): at
+        # amdgpu's default max bpc 16 the DP->HDMI bridge shows a black screen
+        # above 1080p. Keep this line when ps5-console-bpc is removed after the
+        # 8 bpc kernel default (ps5-linux-patches PR #1) is merged.
+        sed -i 's/video=DP-1:[^ ]*/video=DP-1:e/' /tmp/usb_efi/cmdline.txt
+        ;;
     steamos)
         # Failsafe: even with default.target symlinked to graphical.target,
         # some early-userspace paths re-pick multi-user.target if the
